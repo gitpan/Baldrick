@@ -1,0 +1,35 @@
+
+The Baldrick Application Framework is a free and open-source library
+of Perl 5 modules to provide the functionality common to all
+non-trivial web applications: session management, URL-to-handler
+mapping, user loading, authentication and authorization, database
+connectivity and querying, and template-based output generation.
+
+Baldrick is a set of libraries, not an application. It is a tool
+for programmers to use in building their own web applications (called
+Modules in a Baldrick setup).
+
+Baldrick has been used to build a shopping cart, a membership-tracking
+application, and a message board. It could serve equally well as
+the foundation for a blog, a shared calendar application, a photo
+upload site, or any other web application that needs the features
+described above.
+
+Baldrick is designed to allow Modules of functionality - message
+board, blog, etc. - to coexist within a single Site (an installation
+sharing a master config file, session manager and user login setup).
+Users on a site should be able to freely move between installed
+modules without re-authenticating, even if those modules were from
+different developers.
+
+As of October 2007, it is ready for production use. Documentation
+is still very lacking, but I am willing to assist in any installation.
+
+The Baldrick Application Framework may be freely distributed, used,
+and modified, under terms of the GNU Public License or the Perl
+Artistic License.
+
+The name Baldrick is inspired by the BBC Television series BlackAdder.
+No challenge to or dilution of BBC trademarks is intended; the name
+was chosen as a tribute to their fine work.
+

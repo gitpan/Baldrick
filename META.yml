@@ -1,0 +1,22 @@
+--- #YAML:1.0
+name:                Baldrick
+version:             0.82
+abstract:            web application framework
+license:             ~
+generated_by:        ExtUtils::MakeMaker version 6.32
+distribution_type:   module
+requires:     
+    Carp:                          0
+    CGI:                           0
+    Config::General:               0
+    Data::Dumper:                  0
+    DBI:                           0
+    Getopt::Long:                  0
+    MIME::Base64:                  0
+    Test::Simple:                  0.44
+    Time::HiRes:                   0
+meta-spec:
+    url:     http://module-build.sourceforge.net/META-spec-v1.2.html
+    version: 1.2
+author:
+    - Matt Hucke (hucke@cynico.net)

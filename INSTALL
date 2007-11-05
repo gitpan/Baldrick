@@ -1,0 +1,40 @@
+
+Welcome to the Baldrick Application Framework.
+
+While the libraries are fully functional and reliable, the distribution
+and packaging is still primitive.
+
+Quick Guide to Installation:
+
+- Choose a location for the perl libraries, which are under 
+  lib/Baldrick in the distribution.  Move the "lib/Baldrick" directory 
+  to the appropriate location - this could be in a "lib" directory within
+  your cgi-bin directory, or /usr/local/lib/perl5/site_perl/x.x.x/.
+  The perl modules must remain in a directory called "Baldrick", which
+  should be within your general "lib" directory.
+
+- install "baldrick-stub" in your CGI directory, renaming it to 
+  "baldrick-stub".
+
+- edit the "use lib" statement in baldrick-stub if your installation directory
+  for the libraries is anything other than "lib/Baldrick" or a "Baldrick"
+  directory within the @LIB search path.
+
+- run "./baldrick-stub".  Install any missing libraries it complains about,
+  such as Template, Time::HiRes, etc.
+
+- In cgi-bin directory, make symlinks to baldrick-stub for whatever 
+  program names you want to invoke it as - "shop", "forum", "signup", etc.
+        ln -s baldrick-stub shop
+        ln -s baldrick-stub forum       ...etc.
+  (Every Baldrick application has the same loader, the stub; it then looks
+  up URLs in the config file to decide how to handle each request.)
+
+- Create a config file as "etc/baldrick.cfg". See 
+      http://www.baldrickframework.org/book/Baldrick.cfg 
+  for format and examples.
+
+- In the config file, edit PathMap to associate URLs with Modules (handlers).
+
+Contact hucke@cynico.net if you have questions.
+

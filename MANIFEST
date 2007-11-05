@@ -1,0 +1,33 @@
+Changes
+etc/baldrick.cfg.dist
+INSTALL
+bin/baldrick-stub
+lib/Baldrick.pm
+lib/Baldrick/App.pm
+lib/Baldrick/Baldrick.pm
+lib/Baldrick/Database.pm
+lib/Baldrick/DBUserLoader.pm
+lib/Baldrick/Dogsbody.pm
+lib/Baldrick/DungGatherer.pm
+lib/Baldrick/FileSession.pm
+lib/Baldrick/InputValidator.pm
+lib/Baldrick/MessageCatalogue.pm
+lib/Baldrick/Request.pm
+lib/Baldrick/Session.pm
+lib/Baldrick/SpecialTurnip.pm
+lib/Baldrick/Stub.pm
+lib/Baldrick/TemplateAdapterBase.pm
+lib/Baldrick/TemplateAdapterTT.pm
+lib/Baldrick/Trousers.pm
+lib/Baldrick/Turnip.pm
+lib/Baldrick/TurnipWagon.pm
+lib/Baldrick/User.pm
+lib/Baldrick/UserLoader.pm
+lib/Baldrick/UserLoginHandler.pm
+lib/Baldrick/Util.pm
+LICENSE
+Makefile.PL
+MANIFEST			This list of files
+README
+t/001_load.t
+META.yml                                 Module meta-data (added by MakeMaker)
