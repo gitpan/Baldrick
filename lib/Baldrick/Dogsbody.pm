@@ -7,14 +7,12 @@
 # v0.7 2007/08 new template adapter setup.
 
 package Baldrick::Dogsbody;
-
-use lib '..';
-use Data::Dumper;
-use Baldrick::Util;
-
 use strict;
+use base qw(Baldrick::Turnip);
 
-our @ISA = qw(Baldrick::Turnip);
+use Baldrick::Util;
+use Data::Dumper;
+
 our $DUMP_ORDINAL = 1;
 
 sub init # ( %args )
@@ -29,11 +27,13 @@ sub init # ( %args )
                 errortemplate templatedir cmdAliases
                 parentHandler) ],
             copyDefaults => {
-                errortemplate => 'error.tt',
+                errortemplate => 'error',
                 cmdAliases => { },
             }
         ); 
     };
+
+
     if ($@)
     {
         die("Dogsbody Initialisation error: $@  (perhaps init() was called without arguments?");
@@ -99,7 +99,7 @@ sub _initTemplateAdapter
 
     my $def = $self->getDefinition();
     my $tbase = $def->{'template-base'} ? $def->{'template-base'} 
-        : $app ? $app->getConfig('template-base', section => 'Baldrick') 
+        : $app ? $app->getConfig('template-base', section => 'Baldrick', defaultvalue => 'templates') 
         : 'templates';
 
     my $tdir = $self->{_templatedir};
@@ -113,7 +113,7 @@ sub _initTemplateAdapter
     my $adapter = 0; 
     if ($cfg)
     {
-        $adapter = Baldrick::TemplateAdapterBase::factoryCreateObject(
+        $adapter = Baldrick::TemplateAdapter::factoryCreateObject(
             name => $adapterName, config => $cfg, creator => $self,
             substitutions => $subs,
         );
@@ -122,7 +122,7 @@ sub _initTemplateAdapter
             substitutions => $subs
         );
     } else {
-        $adapter = Baldrick::TemplateAdapterBase::factoryCreateObject(
+        $adapter = Baldrick::TemplateAdapter::factoryCreateObject(
             name => 'default', config => { }, creator => $self,
             substitutions => $subs,
         );
@@ -210,7 +210,7 @@ sub finish # ()
 	my ($self) = @_;
 	return 0 if ($self->{_finished});
 
-    # $self->getOut()->finish();    already done in afterRun()
+    # $self->getOut()->finish();    already done in _afterRun()
     $self->SUPER::finish();
  	
 	foreach my $k qw(_request _app _session _out)
@@ -315,14 +315,27 @@ sub sendOutput # ( text=>(text) | template=>filename | dump => object | error =>
 
     if ($what eq 'error')
     {
-		$self->{_errortemplate} ||= 'error';
-        $self->getOut()->putInternal('errorMessage', $args{$what} || 'unknown error');
-        $self->sendOutput(template => $self->{_errortemplate}); 
+        my $emsg = $args{$what} || $@ || 'unknown error';
+        $self->getOut()->putInternal('errorMessage', $emsg);
+
+        my $fullpath = $self->getTemplate( $self->{_errortemplate} || 'error');
+        if ($fullpath)
+        {
+            $self->sendOutput(template => $fullpath);
+        } else {
+            $self->sendOutput(text => qq|<h1>error</h1>\n<p>$emsg</p>| .
+                qq|<p><i>additionally, <b>errortemplate</b> was not defined in | 
+                . ref($self) . qq|</i></p>| . 
+                qq|<hr>Baldrick Application Framework $Baldrick::Baldrick::VERSION|
+            );
+        } 
 	} elsif ($what eq 'dump') {
 		my @caller = caller();
         my $ord = ++$DUMP_ORDINAL;
         my $type = ("".ref($args{dump})) || 'object';
-        my $output = qq#<div class="webdump_head"><a onClick="javascript:var foo=document.getElementById('webdump$ord');foo.style.display=foo.style.display ? '' : 'none';">$type</a> dumped from $caller[0] $caller[2]</div>\n#;
+        my $headline = $args{headline} || "$type dumped from $caller[0] $caller[2]";
+
+        my $output = qq#<div class="webdump_head"><a onClick="javascript:var foo=document.getElementById('webdump$ord');foo.style.display=foo.style.display ? '' : 'none';">$headline</a></div>\n#;
         $output .= qq#<div id="webdump$ord" class="webdump_body">#;
 		$output .= "<pre>" . Dumper($args{dump}) . "</pre>\n";
         $output .= qq#</div>#;
@@ -379,7 +392,7 @@ sub _resolveCommandAlias
     return 0;
 }
 
-sub run # (%args)
+sub processRequest # (%args)
 # Main entry point.  Will grab list of commands from CGI (usually in 'cmd'
 # variable), then call the handler for each.
 {
@@ -387,10 +400,11 @@ sub run # (%args)
 
 	return 0 if ($self->{_done});
 
-	eval {
-		my @cmdlist = $self->getCommandList();
+    my $def = $self->getDefinition();
+    my @cmdlist = $self->getCommandList();
 
-        $self->prepareRun(commandlist => \@cmdlist);
+	eval {
+        $self->_prepareRun(commandlist => \@cmdlist);
 
 		if ($#cmdlist < 0)
 		{
@@ -406,7 +420,6 @@ sub run # (%args)
 			}
 		} 
 	
-        my $def = $self->getDefinition();
 		for (my $c=0; ($c<=$#cmdlist) && (! $self->{_done} ); $c++)
 		{
             my $cmd = $cmdlist[$c]->{cmd};
@@ -445,7 +458,7 @@ sub run # (%args)
 				$self->endRun(%argsForCmd);
 			} 
 		}
-        $self->afterRun();
+        $self->_afterRun();
 	};
 	if ($@)
 	{
@@ -564,8 +577,8 @@ sub initStandardResponseHeaders
 
 # Run immediately after parsing of command line.
 # Initialises output headers and loads user.
-# May be overridden if desired, but subclass should probably call parent's prepareRun().
-sub prepareRun
+# May be overridden if desired, but subclass should probably call parent's _prepareRun().
+sub _prepareRun
 {
 	my ($self, %args) = @_;
 
@@ -603,7 +616,7 @@ sub beginRun { return 0; }
 sub endRun { return 0; }
 
 # Do final cleanup at end of run.
-sub afterRun
+sub _afterRun
 {
 	my ($self)= @_;
 
@@ -703,39 +716,43 @@ sub dispatchCommand # ( %args)
 	my $cmd = $args{cmd};	# command (without arg) that came from CGI
 	$self->{_currentCommand} = $cmd;
 
-	my $func = $self->_transformCommand($cmd);
-	if ($func)
+    my $command = $self->_transformCommand($cmd);
+	if (! $command)
 	{
-		$func = 'handle' . $func;
-	} else {
-		$func = 'handleDefaultCommand';
+        return $self->handleDefaultCommand(%args);
 	}
 
-    if (! $self->can($func))
+    my $fname = 'handle' . $command;
+
+    my $coderef = $self->can($fname);
+    if (!$coderef)
     {
-	    return $self->handleUnknownCommand( func => $func, %args );
+	    return $self->handleUnknownCommand( 
+            cmd => $cmd, command => $command, 
+            functionName => $fname, %args 
+        );
     } 
 
-	# build perl statement to call our function.
-	my $runme = 'return ($self->' . $func . '(%args))';
-	$@='';
-	my $rv = eval $runme;
-
+    my $rv = -1;
+    eval {
+        # no strict 'refs';
+        # $rv = $self->$fname;
+        $rv = &$coderef($self, %args);
+    };
 	if ($@)
 	{
 		# Can't locate object method "handleFred" via package 
 		# "Baldrick::Dogsbody" at (eval 19) line 1.
-
 		my $err = $@;
-		if ( $err =~ m/locate object method "$func"/)
+		if ( $err =~ m/locate object method "$fname"/)
 		{
-			return $self->handleUnknownCommand( func => $func, %args );
+			return $self->handleUnknownCommand( cmd => $cmd, command => $command,
+                functionName => $fname, %args );
 		} else {
 			return $self->setError($@, fatal => 1, no_stderr => 1);
 		}
-	} else {
-		return $rv;
 	}
+	return $rv;
 }
 
 sub _transformCommand # ($cmd)
@@ -750,7 +767,7 @@ sub _transformCommand # ($cmd)
 	# $cmd =~ tr/A-Z/a-z/;	# lowercase it.
 
 	# untaint it.
-	if ($cmd =~ m/([A-Za-z0-9-_]+)/)	# strip all but a-z, -, _
+	if ($cmd =~ m/^([A-Za-z0-9-_]+)/)	# strip all but a-z, -, _
 	{
 		$cmd=$1;
 	} else {
@@ -805,9 +822,12 @@ sub handleUnknownCommand # ( func => handleXXX, cmd => XXX, ...)
 {
 	my ($self, %args) = @_;
 
-	$self->abort(sprintf(
-        "Cannot locate handler %s->%s() for command '%s'",
-        ref($self), $args{func} || 'ERR-UNKN-FUNC', $args{cmd})
+	$self->abort(
+        sprintf("Sorry, I don't know how to '%s'.",
+            $args{command} || $args{cmd} || $args{functionName} || "do that"),
+        privmsg => sprintf(
+            "Cannot locate handler %s->%s() for command '%s'",
+        ref($self), $args{functionName} || 'ERR-UNKN-FUNC', $args{cmd})
     );
 }
 
@@ -924,7 +944,7 @@ sub getConfig
 	my $rv = Baldrick::Turnip::getConfig($self, $cfgkey, %args);
 	if ('~' eq substr($rv,0,1))
 	{
-		# ~tt~
+		# ~ADAPTER:EXPRESSION
 		if ($rv =~ m/^\~([a-z]+):(.*)/) 
 		{
 			my $evaluator = $1;
@@ -966,3 +986,31 @@ sub sendToModule
     return $rv;
 }
 1;
+__END__
+=head1 NAME
+
+Baldrick::Dogsbody - base class for request handlers
+
+=head1 SYNOPSIS
+
+    use base qw(Baldrick::Dogsbody)
+
+=head1 DESCRIPTION
+
+    In the Baldrick Application Framework (http://www.baldrickframework.org/), 
+    a "Dogsbody" is a request handler.  It services exactly one user request, and is 
+    then destroyed.
+    
+    Module authors should create classes that inherit from Baldrick::Dogsbody, to 
+    provide the controller logic for their application.
+    
+=head1 SEE ALSO
+
+    Baldrick::Examples::ExampleDogsbody
+    http://www.baldrickframework.org/book/Dogsbody
+    
+=head1 AUTHOR
+
+    Matt Hucke, hucke at cynico dot net
+    
+=cut

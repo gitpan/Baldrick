@@ -108,28 +108,43 @@ sub makeHTMLSelector
 	return $rv;
 }
 
-##############################################################################################################
+##############################################################################
 
-package Baldrick::TemplateAdapterBase;
+package Baldrick::TemplateAdapter;
 
 use Carp;
 use strict;
 use Baldrick::Util;
+
 our @ISA = qw(Baldrick::Turnip);
 
 our $DEFAULT_CONFIG = {
-    classname => 'Baldrick::TemplateAdapterTT',
-    'include-path' => '${MODULE_TEMPLATES};${TEMPLATE_BASE};${SCRIPT_DIR};${DOCUMENT_ROOT}'
+    classname => 'Baldrick::TemplateAdapter::TemplateToolkit',
+    'include-path' => '${MODULE_TEMPLATES};${TEMPLATE_BASE};${TEMPLATE_BASE}/${MODULE_TEMPLATES};${SCRIPT_DIR};${DOCUMENT_ROOT}'
 };
 
 sub init
 {
     my ($self, %args) = @_;
 
-    $self->SUPER::init(%args);
+    $self->SUPER::init(%args,
+        copyRequired => [ 'config' ]
+    );
+
+    $self->{_filesuffix} = $self->getConfig('filesuffix', defaultvalue => $args{default_suffix} );
+    $self->{_engineStartup} = $self->getConfig('engine-startup-options', 
+        defaultvalue => $args{default_startup_opts} || {}
+    );
+
 	$self->_initDefaultObjects();
     $self->_initIncludePath(%args);
+
     return $self;
+}
+
+sub getEngineStartupOptions
+{
+    return ($_[0]->{_engineStartup} || {});
 }
 
 sub finish
@@ -141,6 +156,15 @@ sub DESTROY
 {
 	my ($self) = @_;
 	$self->finish();
+}
+
+sub makeObjectList
+{
+    my ($self) = @_;
+
+    my $obj = $self->getObjects();
+    my @okeys = sort (keys (%$obj));
+    $obj->{internal}->{OBJECT_LIST} = join(" ", @okeys);
 }
 
 sub _initIncludePath
@@ -168,9 +192,19 @@ sub setIncludePath
     foreach my $path (@inpaths)
     {
         my $outpath = $path;
-        $outpath =~ s/\$\{([^\}]+)\}/defined($subs->{$1}) ? $subs->{$1} : "UNKNOWN-$1"/eg;
+        $outpath =~ s/\$\{([^\}]+)\}/defined($subs->{$1}) ? $subs->{$1} : next/eg;
+
         $outpath =~ s#/$##;
-        push (@outpaths, $outpath);
+        $self->mutter("adding template path: $outpath");
+
+        if (-d $outpath || -f $outpath)
+        {
+            push (@outpaths, $outpath);
+        } elsif ($self->getConfig("dont-check-paths")) {
+            push (@outpaths, $outpath);
+        } else {
+            $self->mutter("WARNING: output path $outpath doesn't appear to exist");
+        } 
     } 
 
     $self->{_includePath} = \@outpaths;
@@ -188,8 +222,7 @@ sub getEngine
 sub getPreferredSuffix { return $_[0]->{_filesuffix} };
 
 sub _initDefaultObjects
-# Add Date, internal, and ENV to object store.  This is generally done at the beginning of 
-# App::getNextRequest(), so each user gets a clean copy of these.
+# Add Date, internal, and ENV to object store.  
 {
 	my ($self) = @_;
 
@@ -203,7 +236,7 @@ sub _initDefaultObjects
 		hour => sprintf("%02d", $lt[2]), 
 		min => sprintf("%02d", $lt[1]), 
 		sec => sprintf("%02d", $lt[0]), 
-		shortdate => sprintf("%04d-%02d-%02d", $lt[5]+1900, $lt[4]+1, $lt[3]),
+		shortdate => sprintf("%02d%02d%02d", $lt[5]%100, $lt[4]+1, $lt[3]),
 		date => sprintf("%04d-%02d-%02d", $lt[5]+1900, $lt[4]+1, $lt[3]),
 		time => sprintf("%02d:%02d:%02d", $lt[2], $lt[1], $lt[0]),
 	);
@@ -215,7 +248,7 @@ sub _initDefaultObjects
 
 sub getObjects
 {
-    my ($self) = @_;
+    my ($self, %args) = @_;
     return $self->{_objects};
 }
 
@@ -273,9 +306,9 @@ sub factoryCreateObject
     my (%args) = @_;
 
     return Baldrick::Turnip::factoryCreateObject(
-        %args, 
         defaultclass => $DEFAULT_CONFIG->{classname},
-        defaultconfig => $DEFAULT_CONFIG
+        defaultconfig => $DEFAULT_CONFIG,
+        %args
     );
 }
 

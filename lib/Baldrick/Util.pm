@@ -677,7 +677,7 @@ sub loadConfigFile
         -SplitPolicy => 'equalsign', 
         -CComments => 0, 
     };
-    $parserOpts->{'-ConfigPath'} ||= $args{config_path} || 'etc';
+    $parserOpts->{'-ConfigPath'} ||= $args{config_path} || [ 'etc' ];
 
     my $cfg = new Config::General(%$parserOpts, -ConfigFile => $fn);
     # my $all = $cfg->getall(); ??not useful

@@ -50,7 +50,7 @@ sub errorPage
 
 =head1 NAME
 
-Baldrick::Stub
+Baldrick::Stub - executable loader for Baldrick
 
 =head1 SYNOPSIS
 

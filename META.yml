@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                Baldrick
-version:             0.82
+version:             0.83
 abstract:            web application framework
 license:             ~
 generated_by:        ExtUtils::MakeMaker version 6.32

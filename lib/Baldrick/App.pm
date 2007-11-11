@@ -115,7 +115,7 @@ sub init # ()
         $self->setState('load-config');
 	    my $config = loadConfigFile(
             $self->{_configfile}, 
-            config_path => $ENV{BALDRICK_CONFIG_PATH} || $startupOptions->{configpath}, 
+            config_path => [ $ENV{BALDRICK_CONFIG_PATH} || $startupOptions->{configpath} ], 
             want_object => 1
         );
 
@@ -581,7 +581,7 @@ sub handleRequest
 
     # The rest of this is outside the eval() because the dogsbody's own error handler is 
     # assumed to be working correctly.
-	$dogsbody->run();
+	$dogsbody->processRequest();
 	$dogsbody->finish();
     $factory->finishRequest($dogsbody);
 
@@ -787,7 +787,7 @@ sub _initRandom
 
     my $method = $args{method} || $self->getConfig('random-seed-method', 
         section => 'Baldrick', 
-        defaultvalue => 'urandom'
+        defaultvalue => 'none' # 'urandom'
     );
 
     my $seed = undef;
@@ -796,15 +796,12 @@ sub _initRandom
     {
         my ($sec, $usec) = Time::HiRes::gettimeofday();
         $seed = ($usec << 16) ^ $sec;
-    } elsif ($method eq 'pid-time') {
+    } elsif ($method eq 'pidtime') {
         my ($sec, $usec) = Time::HiRes::gettimeofday();
         $seed = $$ ^ ($usec << 16) ^ $sec;
-    } elsif ($method eq 'none') {
-        # modern perls do a urandom read on startup; don't need another.
-        return 0;
-    } elsif ($method eq 'urandom' || $method eq 'dev-random') {
+    } elsif ($method eq 'urandom' || $method eq '/dev/random') {
         my $fh = new FileHandle(
-            $method eq 'dev-random' ? "/dev/random" : "/dev/urandom"
+            $method eq '/dev/random' ? "/dev/random" : "/dev/urandom"
         );
 
         my $smeg = "0000";
@@ -813,7 +810,11 @@ sub _initRandom
 
         $seed = unpack('L', $smeg);
         # printf ("%08x - %08x %08x\n", $val, rand($val), rand($val));
-    } 
+    } else {   
+        # modern perls do a urandom read on startup; don't need another.
+        return 0;
+    }
+
 #    my $addr = $ENV{REMOTE_ADDR} ?
 #        unpack('L', Socket::inet_aton($ENV{REMOTE_ADDR}) ) :
 #        2130706433;   # (= 127.0.0.1)
@@ -843,6 +844,40 @@ sub _loadUserAgentSection
         return $section if ($ua =~ m#$pat#);
     } 
     return 0;   # no match.
+}
+
+sub getDefaultTemplateAdapter
+{
+    my ($self, %args) = @_;
+
+    my $tname = $self->getConfig("default-template-adapter", 
+        section => 'Baldrick', defaultvalue => 'default'
+    );
+
+    my $cfg = $self->getConfig($tname, section => 'TemplateAdapter');
+    if (! $cfg)
+    {
+        $cfg = {
+            classname => $self->getConfig("default-template-adapter-class",
+                section => 'Baldrick', 
+                defaultvalue => 'Baldrick::TemplateAdapter::TemplateToolkit')
+        };
+    }
+
+    my $adapter = 0;
+#    eval {
+        $adapter =  Baldrick::TemplateAdapter::factoryCreateObject(
+            name => 'default', config => $cfg, %args
+        );
+#    }; 
+    if ($@)
+    {
+        $self->errorPage($@, 
+            headline => "<h1>Baldrick::App::getDefaultTemplateAdapter() ERROR:</h1>\n",
+        );
+    } 
+
+    return $adapter;
 }
 
 #################### STATICS #########################################
@@ -880,3 +915,32 @@ sub setAppObject
 }
 
 1;
+__END__
+=head1 NAME
+
+Baldrick::App - master framework class, loads objects, routes requests
+
+=head1 SYNOPSIS
+
+    new Baldrick::App()->run();
+
+=head1 DESCRIPTION
+
+    In the Baldrick Application Framework (http://www.baldrickframework.org/), 
+    the App is the first class created and the last destroyed.  It loads the config
+    file, creates other objects (requests, handlers, users, etc.), and routes 
+    user requests to the appropriate Module.
+    
+    Under mod_perl, a long-lived Baldrick::App class can service multiple requests.
+    
+=head1 SEE ALSO
+
+    Baldrick::Stub -- creates an App for one-request use
+    Baldrick::Trousers -- creates an App to service multiple requests
+    http://www.baldrickframework.org/book/Baldrick::App
+    
+=head1 AUTHOR
+
+    Matt Hucke, hucke at cynico dot net
+    
+=cut

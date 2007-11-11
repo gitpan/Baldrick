@@ -1,57 +1,51 @@
 
-package Baldrick::TemplateAdapterTT;
+package Baldrick::TemplateAdapter::TemplateToolkit;
 
 use Template;
 use Baldrick::Util;
 
 use strict;
 
-our @ISA=qw(Baldrick::TemplateAdapterBase Baldrick::Turnip);
+our @ISA=qw(Baldrick::TemplateAdapter Baldrick::Turnip);
 
 sub init
 {
     my ($self, %args) = @_;
 
-    $self->SUPER::init(%args,
-        copyDefaults => {
-            config => $args{config},
-        }, 
-    );
-
-	# for getPreferredSuffix().
-	$self->{_filesuffix} = $self->getConfig('filesuffix', defaultvalue => 'tt');
-
-	my $incpath = $self->getIncludePath();
-
-    my $engineOpts = $self->getConfig('engine-startup-options', 
-        defaultvalue => {
+    $self->SUPER::init(
+        default_suffix => 'tt',
+        default_startup_opts => {
 	        ABSOLUTE    => 1, 
     		RELATIVE    => 1, 
             POST_CHOMP  => 1,               	# cleanup whitespace
             EVAL_PERL   => 1,               	# evaluate Perl code blocks
             # INTERPOLATE  => 1,               	# expand "$var" in plain text
             # PRE_PROCESS  => 'header',       	# prefix each template
-        }
+        },
+        %args
     );
 
-    $self->installEngine(Template->new(
-    	INCLUDE_PATH => $incpath,  			# or list ref
-        %$engineOpts
-    )); 
+    my $opts = $self->getEngineStartupOptions();
+    $self->installEngine(
+        Template->new(
+    	    INCLUDE_PATH => $self->getIncludePath(),
+            %$opts
+        )
+    ); 
+
     return $self;
 }
 
 sub processString
 {
-	my ($self, $text) = @_;
+	my ($self, $text, %args) = @_;
 	my $tt = $self->getEngine();
 
-	my $output;
-
+	my $output='';
 	if (! $tt->process(\$text, $self->getObjects(), \$output))
 	{
 		my $err = $tt->error();
-		$self->abort($err);
+		$self->abort($err) unless ($args{softfail});
 	}
 	return $output;
 }
@@ -59,20 +53,18 @@ sub processString
 sub processFile # ($file) return REFERENCE
 # return a reference to a string containing the processed text.
 {
-	my ($self, $file) = @_;
+	my ($self, $file, %args) = @_;
 
 	print "- processfile $file<br>\n" if ($self->{debug});
 	my $tt = $self->getEngine();
 
-    my $obj = $self->getObjects();
-    my @okeys = sort (keys (%$obj));
-    $obj->{internal}->{OBJECT_LIST} = join(" ", @okeys);
+    $self->makeObjectList();
 
 	my $out;
-	if (! $tt->process($file, $obj, \$out))
+	if (! $tt->process($file, $self->getObjects(), \$out))
 	{
 		my $err = $tt->error();
-		$self->abort($err);
+		$self->abort($err) unless ($args{softfail});
 	}
 	return \$out;
 }

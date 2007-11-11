@@ -1,0 +1,90 @@
+# A UserClass section defines how users are loaded and authenticated.
+
+# Sorry the documentation is a bit sparse right now, I will work on 
+# this for v0.84+.
+
+<UserClass default>
+    database = main
+    # tableprefix is prepended to user-table, user-group-table, group-table, ...
+    # tableprefix = example_
+
+    user-table = users
+    # user-object-class = MySite::MyUserClass
+    user-object-class = Baldrick::User
+    defaultkey = id
+
+    # disable-groups = false
+    # disable-addresses = false
+
+     <Login>
+        login-with = email username 
+
+        # For testing, this allows login to ANY account by supplying this
+        # password instead of the real password.  User must be coming from
+        # the specified IP.  Use with caution!
+        # backdoor-192.168.0.25 = some-password
+        # backdoor-192.168.1.45 = some-other-password
+
+        password-method = clear
+        password-field = clearpass
+        sessionkey-authuid = uid
+        authuid-user-field = userid
+
+        transform-email = downcase
+
+        save-email-cookie = saved_email
+    </Login>
+
+    <VirtualFields>
+        userid = id
+        email = email
+    </VirtualFields>
+
+    <Queries>
+        # load-by-userid = 
+        # load-by-email =
+    </Queries>
+    <Addresses>
+        user-id-field-for-addrs = id
+
+#       get-user-addresses-query = SELECT * FROM useraddrs ua WHERE ua.userid in (#LIST#)
+        # METHOD 1: ONE TABLE.
+        #   defaults: useraddrs; userid; addrid
+        user-address-table          = user_address
+        user-address-field-userid   = user_id
+        user-address-field-addrid   = address_id
+
+        # METHOD 2: NO TABLES; take from fields of user rec.
+        # address-in-user-record = false
+        # address-fields = address address2 city state zip country
+    </Addresses>
+   <Groups>
+        # user-group-table - REQUIRED if the group feature is to be 
+        # used at all.  There are two ways of using it.  If group-table
+        # is also defined, it will be JOIN'd to get the group names;
+        # otherwise, it is expected that 'groupname' will be a part 
+        # of user-group-table (with numeric group ids not in use).
+
+        # which field of User to look at...
+        user-id-field-for-groups = id
+
+        # METHOD 1: ONE TABLE.
+        # user-group-table = usergroups
+        # user-group-field-userid   = userid
+        # user-group-field-groupname    = groupname
+
+        # METHOD 2: TWO TABLES (will join).
+        user-group-table            = usergroups
+        user-group-field-userid     = userid
+        user-group-field-groupname  = groupname
+        user-group-field-groupid    = groupid
+
+        group-table                 = groups
+        group-field-groupid         = groupid
+        group-field-groupname       = groupname 
+
+        # get-user-groups-query = SELECT * FROM usergroups ug INNER JOIN groups g ON (ug.groupid = g.groupid) WHERE ug.userid in (#LIST#) ORDER BY g.groupname
+    </Groups>
+</UserClass>
+
+

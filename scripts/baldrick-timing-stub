@@ -1,0 +1,117 @@
+#!/usr/bin/perl
+
+package Baldrick::TimedStub;
+use strict;
+
+use lib 'lib';  
+my $timelog = "/tmp/baldrick-times.txt";
+
+######################################################
+use Time::HiRes qw(gettimeofday tv_interval);
+my @times;
+
+exit(main());
+
+######################################################
+sub main
+{
+    doTime('start');
+    return -1 if (loadBaldrick() < 0);
+    doTime('load');
+
+    eval {
+        my $app = new Baldrick::App();
+        $app->run();
+        $app->finish();
+        $app=0;
+    };
+    if ($@)
+    {
+        return errorPage($@, 'RUNTIME ERROR');
+    }
+    doTime('fin');
+    writeTimeLog();
+    return 0; 
+}
+
+sub loadBaldrick
+{
+    my $fred = 'use Baldrick::Baldrick;';
+    eval $fred;
+    if ($@)
+    {
+        return errorPage($@, "SEVERE ERROR - CANNOT LOAD FRAMEWORK");
+    }
+    return 0;
+}
+
+
+sub errorPage
+{
+    my ($msg, $headline) = @_;
+
+    print "Content-type: text/html\n\n";
+
+    $headline ||= 'ERROR';
+    print "<h2>$headline</h2>\n\n";
+    print "$msg\n\n";
+    return -1;
+}
+
+sub doTime
+{
+    my ($event) = @_;
+    push (@times, { event => $event, time => [ gettimeofday() ] } );
+}
+
+sub writeTimeLog
+{
+    return -1 if (! $timelog);
+
+    my $fh = new FileHandle(">>$timelog");
+    return -2 if (!$fh);
+
+    $fh->print(
+        sprintf(
+            "%s compile=%f run=%f total=%f\n", $ENV{SCRIPT_FILENAME},
+                tv_interval($times[0]->{time}, $times[1]->{time}), 
+                tv_interval($times[1]->{time}, $times[2]->{time}), 
+                tv_interval($times[0]->{time}, $times[2]->{time}), 
+               )
+    ); 
+    $fh->close();
+    return 0;
+}
+
+=head1 NAME
+
+Baldrick::TimedStub - Baldrick::Stub with timing functions added
+
+=head1 SYNOPSIS
+
+  $ cd /var/www/my-website/cgi-bin
+  $ cp [Baldrick-Installation-Directory]/scripts/baldrick-timed-stub baldrick-stub
+  $ ln -s baldrick-stub [my-program-name]
+  $ lynx http://www.mysite.com/cgi-bin/[my-program-name]
+
+=head1 DESCRIPTION
+
+  Baldrick::Stub is the main program for any Baldrick application.  It
+  loads the Baldrick libraries, then creates an App object.
+
+  Baldrick::TimedStub is an alternate version that writes the time 
+  necessary for each stage (loading Baldrick, processing Requests)
+  to a log file.  It's mainly of interest to the developer of Baldrick,
+  who wants to ensure the library doesn't get too bloated.
+
+=head1 SEE ALSO
+
+  See http://www.baldrickframework.org/book/Baldrick::Stub
+
+=head1 AUTHOR 
+    
+  Matt Hucke (hucke@cynico.net)
+
+=cut
+
+1;

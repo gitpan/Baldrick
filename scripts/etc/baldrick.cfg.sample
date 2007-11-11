@@ -1,0 +1,329 @@
+#
+# baldrick.cfg - Master config file for a Baldrick "Site".
+#
+# On initial install, copy or rename baldrick.cfg.dist to baldrick.cfg.
+# This should be placed in the "etc" directory within your CGI directory.
+# If using mod_perl, point to it with PerlSetEnv BALDRICK_CONFIG_PATH 
+
+# parsed with perlmod Config::General. Format is similar to httpd.conf.
+
+# In the examples in this file, multiple options are separated with
+# pipe "|" characters, and the first listed is the default.
+
+# If you prefer to break it up into smaller files, use the "Include"
+# directive to recombine them:
+#
+#   Include mymodules.cfg
+#   Include otherstuff.cfg
+
+# OPTIONAL SECTION: Baldrick   [a few global settings]
+<Baldrick>
+    # random-seed-method = builtin | urandom | /dev/random | timeofday | pidtime
+    # How to seed the random-number generator on startup. 
+    # The default of "builtin" assumes that perl has already done it.
+    # random-seed-method = urandom
+
+    # site-admin-email = (undefined) | (email-address)
+    # Critical error messages are sent to this address.
+    # site-admin-email = webmaster@example.com
+
+    # timelog = (undefined) | (filename)
+    # If defined, the time elapsed during each run is written here.
+    timelog = /tmp/baldrick-time.log
+</Baldrick>
+
+# REQUIRED SECTION: PathMap -- maps URLs to handlers
+# PathMap is used to map URIs to Module sections, and therefore to 
+# request handlers.
+# IMPORTANT: for every "path" entry in PathMap, you must copy or symlink 
+#  the "baldrick-stub" program in that location (i.e., "/cart/shop", 
+#  "/cgi-bin/blog", "/cgi-bin/logout") within the ScriptAlias'd directory
+#  of your web server.   The web server will not be able to find your
+#  application (and run Baldrick) if this is not done.  
+<PathMap>
+    # SYNTAX:
+    # path  ModuleName[:[?]command]
+    # path is: a URL-path relative to the root ("/bin/shop") or just the
+    #   last component of one ("shop").
+    # ModuleName is: an identifier used to find a Module Section in 
+    #   this config file - it points to a Module (program) like 
+    #   a blog or shopping cart.
+    # command is: a function to invoke on that module, such as "add" (to cart),
+    #   "view" (cart), "post" (to blog), etc.   
+    #   COMMAND IS USUALLY LEFT BLANK HERE - the CGI variable "cmd" is used
+    #   instead, allowing the same base URL ("/bin/shop") to perform multiple
+    #   functions (add to cart, view cart, checkout, etc.)
+    #   If command is preceded by "?" it is just a default that can be 
+    #   overridden with the user-supplied "cmd" variable.
+
+    # EXAMPLES:
+    # A full path, pointing to a target module.
+    /bin/blog = BlogModule
+    #       ("Module BlogModule" is a section in this file).
+    
+    # The same thing, but using the last path component only.
+    blog = BlogModule
+    # The same module might be invoked under many different names.
+    journal = BlogModule
+    diary   = BlogModule
+    /bin/leave-comment = BlogModule
+
+    # A different Module on the same Site as the previous example.  
+    # One Baldrick Site (master config file and
+    # user login domain) can have multiple Modules (apps, perhaps with 
+    # different authors), and this is how requests are dispatched to them.
+    /cart/shop = ShoppingCart
+    shop = ShoppingCart
+
+    # Implicit Command Examples: Normally, the "command" (add-to-cart,
+    #   post-to-blog, view-cart, checkout) is supplied by the user
+    #   in the "cmd" variable (which probably was a hidden form field
+    #   or part of the query-string in a link).  You can define a command
+    #   here instead.
+    # These examples will all dispatch the request to the same Module,
+    # but will invoke different functions on the Module's handler-class:
+    #   handleAdd(), handleRemove(), handleCheckout().
+    /cart/additem = ShoppingCart:add
+    /cart/removeitem = ShoppingCart:remove
+    /cart/checkout = ShoppingCart:checkout
+
+    # Make the implicit command something a user can override
+    # (the "?" before the command name means it's just a default; 
+    # any "cmd=XXXXXX" variable in the user inputs will take precedence).
+    /cart/shop = ShoppingCart:?viewcart
+
+    # There should always be a /bin/login and /bin/logout.
+    login = UserLoginHandler:login
+    logout = UserLoginHandler:logout
+</PathMap>
+
+# OPTIONAL SECTION: UserClass -- describes how to load and authenticate users
+# You'll probably want to support user logins on your site.
+# This is done by defining at least UserClass.  A UserClass is a 
+# config file section, with a name, that defines a UserLoader object
+# (a factory class that knows how to look up user info), and has 
+# other settings that make sense to that UserLoader class (like what
+# database tables to pull user data from).
+# 
+# EXAMPLE:
+# <UserClass exampleusers>
+#   user-loader-class = Baldrick::DBUserLoader    ## a factory class
+#   user-object-class = Baldrick::User            ## what it produces
+#  Various settings that the UserLoader class understands.
+#  database = ...  ; users-table = ... ; groups-table = ...
+# </UserClass> 
+# These are complex enough that I prefer to have another file for them,
+# and just point to it here.    Use the "Include" directive for this.
+
+Include userloader.cfg.sample
+
+# REQUIRED SECTION(s): Module (module-name)
+# The right-hand-side of the entries in the "PathMap" sends requests to
+# a Module.  A Module is an application that makes up part of your Site - 
+# a shopping cart, blog, message board.  Each incoming user request (page
+# load) is sent to one module based on the "PathMap" entries.  For each
+# module name used in PathMap (ShoppingCart, BlogModule, UserLoginHandler in 
+# our examples), a "Module" section with that name must define it.  The
+# Module section tells Baldrick what Perl module to load and to send the
+# request to (a module that inherits from Baldrick::Dogsbody), how to
+# load the users, etc.  Within this framework, the contents of the config
+# section are known as the "Module Definition".
+
+# A Module section begins with the word "Module", a space, and a unique
+# module name, in angle brackets.  The module name is any arbitrary 
+# identifier you choose - it just links this section with the PathMap.
+
+<Module MinimalistShoppingCart>
+    # REQUIRED: handler-class = Perl-Module-Name
+    # The handler-class is a subclass of Baldrick::Dogsbody that implements
+    # an application.  The handler class will have functions defined for
+    # the various operations (commands) a user performs - a shopping cart
+    # handler class would have handleAdd(), handleRemove(), handleViewCart().
+    # 
+    handler-class = BiffCart3000::ShopHandler   
+    # [...] other options omitted.
+</Module>
+
+# EXAMPLE: 
+<Module SampleModule>
+    # REQUIRED: handler-class = Perl-Module-Name
+    # - A Perl module that inherits from Baldrick::Dogsbody (or has a 
+    # similar public interface).  If you're installing a third-party
+    # application module, see the installation instructions there to
+    # find the handler class; if writing your own module, you'll have to 
+    # write one - all Baldrick applications begin by making a Handler class.
+    handler-class = FredWare::MessageBoardHandler
+
+    # inherit = MODULE-NAME
+    # Copy settings from another "Module" section -- useful for those 
+    # like "user-class" and "session-manager" that should be the same
+    # for every module on a site.  See the next section for
+    # a usage example.
+
+    # access = (all | anonymous | valid-user | GROUPNAME )
+    # Determines who is allowed to use this module.
+    # "access" is a space-separated list of the keywords above, with
+    # unrecognised keywords interpreted as a user group name (see the
+    # userloader config files for more on groups).
+    #   all -- known users and anon users both are allowed
+    #   anonymous -- users who have not logged in
+    #   valid-user  -- users who have logged in
+    #   GROUPNAME -- users in this group can use this module.
+    # 
+    access = all    
+    # access = anonymous valid-user ## anonymous+valid-user same as "all"
+    #   here's one with arbitrary group names (from your own group setup):
+    # access = siteadmins boardadmins bosses 
+
+    # errornotify= (undefined) | EMAIL-ADDRESS
+    # Critical errors result in an email to this admin.
+    #   (The programmer decides what a critical error is using the "critical"
+    #   parameter on the Baldrick::Turnip::abort() function).
+    # errornotify= webmaster@example.com
+
+    # user-class = default | none | USER-CLASS-NAME
+    # Points to a UserClass section in the config file (or an "Include" config
+    # file such as userloader.cfg).  The default, "default", can be used as
+    # the section name.  Users created by this module will be of this class.
+    # ALL MODULES OF A SITE SHOULD HAVE THE SAME USER CLASS so that users may
+    # freely move between modules and remain logged in.
+    user-class = default
+
+    # session-manager = default | null | SESSION-MANAGER-NAME
+    # Points to a SessionManager section in the config file.  The default
+    # is "default", which can be used as a SessionManager section name.
+    # The keyword "null" will yield a useless session manager that 
+    # never writes anything out to disk - it's only intended for 
+    # very simple applications that don't support user login or 
+    # remembering any user # state.
+    # ALL MODULES OF A SITE SHOULD HAVE THE SAME SESSION MANAGER so that 
+    # users may freely move between modules and remain logged in.
+    session-manager = default
+
+    # template-adapter = TEMPLATE-ADAPTER-NAME # (default: "default")
+    # Points to a TemplateAdapter section in the config file.  The default
+    # is "default", which can be used as a TemplateAdapter section name.    
+    # The TemplateAdapter is a class that generates output.  This setting
+    # might be entirely different between various modules on the site, as
+    # the programmers of those modules might prefer different template
+    # languages.
+    template-adapter = default
+
+    # template-base = DIRECTORY # (default: "templates")
+    # Where to find the output templates for this module.  Third-party
+    # modules may have a preferred location for these, other than the
+    # default, which is "templates" within cgi-bin.
+    # (Modules generally look for their templates in a subdirectory of
+    # the template-base -- template-base/FredBoard, 
+    # template-base/BiffCart, or somesuch.  This is determined within
+    # the program).
+    # template-base = /var/www/example.com/FredsMessageBoard/templates
+
+    # working-directory = DIRECTORY
+    # chdir() to this directory, if defined, when the module starts
+    # up.  Generally modules should run from the cgi-bin directory, so
+    # this shouldn't be needed.
+    # working-directory = /var/www/example.com/myapp/data
+
+    # logfile = FILENAME # (default: none)
+    # If defined, this log file will be opened, and calls to writeLog()
+    # from within the handler class will cause entries to appear there.
+    # If undefined, nothing will be written.
+    logfile = /tmp/mymodule.log
+   
+    # responseheader-LABEL = "HEADER_NAME: HEADER_VALUE"
+    # responseheader-LABEL2 = "HEADER_NAME: HEADER_VALUE"
+    # Any number of 'responseheader' statements may be present.  Each should have
+    # a distinct LABEL; these labels are meaningless, they're just there to make
+    # the setting name unique.  The string to the right will be sent as-is as an
+    # HTTP reply header.
+    # Programs wanting finer control over the reply headers can use the 
+    # Baldrick::Request API to send arbitrary values.  Doing it in the config file
+    # allows the Site admin to specify site-wide headers, such as the P3P that 
+    # publishes a privacy policy.
+    responseheader-p3p = "P3P: CP=\"blah blah blah\""
+    responseheader-HiThere = "Set-Cookie: hello-world=1;"
+
+    # session-page-counter = ANY_IDENTIFIER
+    # If defined, the named variable will be incremented in the Session each time a page is
+    # loaded.  Useful for statistics gathering.
+    session-page-counter = pageloads
+</Module>
+
+# On a large site, module definitions can be somewhat repetitive - your 
+# modules will typically have the same User class, template system,
+# session manager, etc.  Thus, the recommended practice is to define
+# a base module, and have all your other module definitions inherit 
+# from it.
+
+<Module MyAbstractBaseModule>
+    # Here we define the base module that the others derive from.
+    # Like an abstract class in some programming languages, it will
+    # never be instantiated directly, it's just a template for others
+    # to inherit.
+    # handler-class = [ doesn't matter, if we know we always override it ]
+    user-class = mysiteusers
+    template-adapter = default
+    errornotify = webmaster@example.com
+    # [ etc. ]
+</Module>
+
+<Module ShoppingCart>
+    # inherit = (module-name)
+    # begin with the settings in the "Module module-name" section, 
+    # overriding them with anything explicitly specified here.
+    inherit = MyAbstractBaseModule
+
+    # this example differs from MyAbstractBaseModule only in handler-class.
+    handler-class = BiffCart3000::ShopHandler
+</Module>
+<Module BlogModule>
+    inherit = MyAbstractBaseModule
+    handler-class = FredsBlog::BlogHandler
+    # override one of the standard options inherited from MyAbstractBaseModule -
+    # this third-party Blog module uses a different template system
+    # than usual.   (See below for details on "template-adapter" setting)
+    template-adapter = FredsTemplateSystem
+</Module>
+
+# SECTION: SessionManager NAME
+#   The NAME is used to select a SessionManager section from the 
+#   session-manager directive of a Module section.   This should be the same
+#   for every Module on a Site.
+# By default, it looks for a SessionManager NAME of "default".
+<SessionManager default>
+    # type = file | null
+    # "file" sessions are saved to the filesystem, one session per file.
+    # "null" sessions are functional from a program's perspective, but
+    #   nothing is ever preserved between requests.  Use only for sites
+    #   where session tracking isn't really needed at all.
+    type = file
+
+    ## These options are common to all session types:
+    cookie-name = ssn_id
+    cookie-expires = none
+    cookie-path = /
+    parameter-name = session
+
+    # Security and lifetime options.
+    verify-ip = false
+    verify-user-agent = true
+    max-idle-time = 2h
+    lifespan = 4h
+
+    # cleanup is invoked approximately 1 in [cleanup-frequency] requests.
+    # Sessions with a create-time exceeding 'lifespan', or a modify-time
+    # exceeding 'max-idle-time', will have the specified 'action' applied.
+    cleanup-frequency = 300
+    cleanup-action = delete
+    # cleanup-action = moveto /tmp/sessions-old
+    # cleanup-password allows cleanup to be invoked from a script that
+    # does a HTTP request with the appropriate password.
+    # cleanup-password = fred
+
+    ## For "file" sessions.
+    # directory = directory where session manager will dump session files.
+    directory = /tmp/sessions
+    logfile = /tmp/sessions.log
+</SessionManager>
+
