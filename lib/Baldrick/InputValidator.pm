@@ -300,15 +300,15 @@ sub _modifyInputValue
 		$fn = $args{truefieldname} 	
 	}
 
-	if (defined ($args{request}))
-	{
+	if ($self->{_sourceValues} ) 
+    {
+		$self->{_sourceValues}->{$fn} = $val;
+    } elsif (defined ($args{request})) {
 		$args{request}->put($fn, $val);
 	} elsif (defined ($args{parms}) ) {
 		$args{parms}->{$fn} = $val;
 	} elsif ($self->{_request}) {
 		$self->{_request}->put($fn, $val);
-	} elsif ($self->{_sourceValues} ) {
-		$self->{_sourceValues}->{$fn};
 	} else {
 		# shouldn't happen.
 		$self->abort("cannot find input parameter object in _request or _sourceValues");
@@ -579,7 +579,7 @@ sub checkLength # ($fn, min => -1 | 0 | ..., max => -1 | 0 | ... )
 	my $val = $self->_getInputValue($fn, %args) || return 0;
 	my $len = length($val);
 
-	if (defined ($args{min})  && ($args{min}>=0))
+	if (defined ($args{min}) && ($args{min}>=0))
 	{
 		if ($len < 	$args{min})
 		{

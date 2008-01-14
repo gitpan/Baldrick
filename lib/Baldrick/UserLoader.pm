@@ -110,6 +110,69 @@ sub loadUser # (%args) return Baldrick::User or 0.
 	}
 }
 
+sub _getVirtualFieldMap
+{
+    my ($self) = @_;
+
+    return $self->getConfig('VirtualFields');
+    # return \%rv;
+}
+
+sub _getRealFieldName # ( $virtualfield )
+# virtual fields are things like email, username, id; these may be represented
+# in the database structure as something else.  Return the actual field name
+# for our virtual name (which, by default, is the same thing).
+{
+    my ($self, $fn) = @_;
+    return $self->getConfig($fn, section => 'VirtualFields', 
+            defaultvalue => $fn);
+}
+
+sub makeUsersFromData # (rows => \@rawdata, init_args => ..)
+# Given a list of hashrefs containing user data (from a database query or somesuch),
+# make a user object out of each one, and handle virtual fieldname mappings.
+{
+    my ($self, %args) = @_;
+    
+    my $rows = requireArg(\%args, 'rows');
+    
+    # Virtual Field Names - copy each real field into its alias (within loop below)
+    my $vmap = $self->_getVirtualFieldMap();
+
+    my $objclass = $self->getUserObjectClass();
+    my @users;
+    my $initargs = $args{init_args} || {};
+    my $loadargs = $args{load_args} || { fieldlist => '*' };
+
+    for (my $i=0; $i<=$#$rows; $i++)
+    {
+        my $user = createObject($objclass);
+
+        $user->init( %$initargs, creator => $self )
+          unless ($args{no_init});  # this will init group/addr listrefs.
+        
+        $user->loadFrom($rows->[$i], %$loadargs);
+
+        push (@users, $user);
+
+        # copy real fieldnames into virtual fieldnames. 
+        foreach my $outfield ( keys %$vmap )
+        {
+            my $val='';
+            my @subfields = split(/\s+/, $vmap->{$outfield});
+            foreach my $sf (@subfields)
+            {
+                $val .= ' ' if ($val);
+                $val .= $user->{ $sf };
+            }
+            
+            $user->{$outfield} = $val;
+        } 
+    }
+
+    return \@users;
+}
+
 sub _importPseudoAddresses # ($userlist)
 # build an AddressList entry by poaching fields from the main user record
 # (for those sites that don't want to maintain a separate address table).

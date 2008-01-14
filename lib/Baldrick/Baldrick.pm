@@ -2,7 +2,7 @@ package Baldrick::Baldrick;
 use strict;
 
 BEGIN {
-    our $VERSION     = '0.83';
+    our $VERSION     = '0.84';
     # use Exporter ();
     # use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
     # @ISA         = qw(Exporter);

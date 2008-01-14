@@ -75,11 +75,11 @@ sub main
     } 
 
     print "Checking for template systems - you should have at least one.\n";
-    requireOneModule( [ qw(Template Text::Template) ] );
+    lookForOneModule( [ qw(Template Text::Template) ] );
 
     WriteMakefile(
         NAME         => 'Baldrick',
-        VERSION_FROM => 'lib/Baldrick/Baldrick.pm', # finds \$VERSION
+        VERSION_FROM => 'lib/Baldrick/Baldrick.pm',
         AUTHOR       => 'Matt Hucke (hucke@cynico.net)',
         ABSTRACT     => 'web application framework',
         PREREQ_PM    => $depend, 
@@ -103,13 +103,26 @@ sub selectBaseDirectory
         {
             push (@candidates, "$h/cgi-bin/");
         } 
-    } else {
-        push (@candidates, "/var/www/example.com/cgi-bin");
-    } 
+    }
 
-    for (my $i=0; $i<10; $i++)
+    
+    foreach my $d ("/usr/local/apache", "/usr/local/apache2", "/var/www", "/www", 
+        "/tmp", "C:/temp", "C:/", "C:/inetpub/wwwroot", "D:/inetpub/wwwroot")
     {
-        my $dir = prompt("Base installation directory:", $candidates[0]);
+        push (@candidates, "$d/cgi-bin/") if ( (-d $d) && (-w $d) );
+    } 
+    push (@candidates, "/var/www/example.com/cgi-bin");
+
+    print qq#Suggested installation directories:\n\n#;
+    for (my $i=0; $i<=$#candidates; $i++)
+    {
+        print qq#\t$candidates[$i]\n#;
+    } 
+    print qq#\n#;
+
+    for (my $i=0; $i<=$#candidates; $i++)
+    {
+        my $dir = prompt("Base installation directory:", $candidates[$i]);
         if ($dir)
         {
             if ( ($dir eq "/") || ($dir eq "/etc") || ($dir eq "") )
@@ -157,7 +170,7 @@ sub readOption
     die("Too many failed attempts to answer the question.");
 }
 
-sub requireOneModule
+sub lookForOneModule
 {
     my ($list) = @_;
 
@@ -177,8 +190,10 @@ sub requireOneModule
     {
         return \@outlist;
     } else {
-        die("You must first install at least one of these modules:\n\t" . 
+        print ("WARNING: You must first install at least one of these modules:\n\t" . 
             join ("\t", @$list));
+        print ("(continuing anyway...)\n");
+        return 0;
     }
 }
 

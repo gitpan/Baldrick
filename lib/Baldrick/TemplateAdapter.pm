@@ -34,6 +34,14 @@ sub printf
 	return sprintf($fmt, @args);
 }
 
+sub random
+{
+    my ($self, $lim) = @_;
+
+    $lim ||= 10000;
+    return ( int( rand($lim)));
+}
+
 sub arraycount
 {
 	my ($self, $foo) = @_;

@@ -18,6 +18,7 @@ our @EXPORT = qw(listToHash mergeHashTrees requireArg requireArgs requireAny
     assembleDate webdump webhead webprint seekTruth parseOptionList wordsplit 
     replaceDateWords round parseTimeSpan randomiseList
     loadConfigFile applyStringTransforms escapeURL escapeHTML
+    deprecated
 );
 
 our $WEBDUMP_ORDINAL = 1000;
@@ -395,6 +396,7 @@ sub webprint # (text) FOR DEBUGGING NOT FOR PRODUCTION
 {
     my ($txt, %args) = @_;
     webhead(%args);
+    $txt .= "<br/>\n" unless ($args{no_line});
     return _prvwebprint($txt, %args);
 }
 
@@ -469,12 +471,17 @@ sub parseOptionList # ( "a:123 b:456") returns hashref {a=>123, b=>456...}
     return \%out;
 }
 
-sub wordsplit
+sub wordsplit   # ($text, $max-chunk-size) return listref of chunks
 {
     my ($text, $max) = @_;
+
+    if (length($text)<$max)
+    {
+        return [ $text ];
+    } 
+
     my @out;
     my $line = '';
-
     foreach my $word (split (/[\s\t\r\n]+/, $text))
     {
         my $len = length($line);
@@ -495,7 +502,7 @@ sub wordsplit
         }
     } # end foreach
     push (@out, $line) if ($line);
-    return @out;
+    return \@out;
 }
 
 
@@ -523,7 +530,7 @@ sub replaceDateWords    # (string, %options)
         # time=15:31:22 shorttime = 153122 shortyear=07
         TODAY     => sprintf("%02d-%02d-%02d", 1900+$lt[5], 1+$lt[4], $lt[3]), 
         LONGDATE  => sprintf("%04d-%02d-%02d", 1900+$lt[5], 1+$lt[4], $lt[3]), 
-        SHORTDATE => sprintf("%02d%02d%02d",   1900+$lt[5], 1+$lt[4], $lt[3]), 
+        SHORTDATE => sprintf("%02d%02d%02d",   ($lt[5]%100), 1+$lt[4], $lt[3]), 
         SHORTTIME => sprintf("%02d%02d%02d",   $lt[2], $lt[1], $lt[0]),
         SHORTYEAR => sprintf("%02d", ($lt[5] % 100) ),
              
@@ -746,4 +753,18 @@ sub escapeHTML
     return $text;
 }
 
+sub deprecated  #  ( [message] )
+{
+	my ($msg) = @_;
+	
+	my @victim = caller(1);
+	my @perpetrator = caller(2);	
+	
+	print STDERR sprintf(
+	   "WARNING: call to deprecated function %s from %s (%s)%s\n",
+	       $victim[3], $perpetrator[3], $victim[3],
+	           $msg ? ": $msg" : ""
+	); 
+	return -1;
+}
 1;

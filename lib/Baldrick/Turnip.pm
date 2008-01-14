@@ -66,7 +66,7 @@ sub init    # ( %args )
         {
             $self->setLogHandle($lh);
         } elsif (my $olf = $args{openLogFile}) {
-            $self->openLogFile(file => $olf);
+            $self->openLog(file => $olf);
         } elsif ($cr && $cr->can('getLogHandle') ) {
             my $lh = $cr->getLogHandle();
             $self->setLogHandle($lh) if ($lh);
@@ -142,6 +142,17 @@ sub _construct # ( \%source, $varlist, %opts )
 	return 0;
 }
 
+sub getDebug
+{
+    my ($self) = @_;
+    return $self->{_debug};
+}
+
+sub setDebug
+{
+    my ($self, $d) = @_;
+    $self->{_debug} = $d;
+}
 
 sub dump # ( %opts ) return string
 {
@@ -424,9 +435,17 @@ sub getConfigSection # ($path, %opts) return hashref
 ################################## ERROR HANDLING ########################################
 
 sub abort # ($msg, %opts)
+# DEPRECATED - this name is too common, causes conflicts.  use fatalError().
 {
 	my ($self, $msg, %args) = @_;
 	return $self->setError ($msg, %args, fatal => 1, uplevel => 1 + $args{uplevel});
+} 
+
+sub fatalError # ($msg, %opts)
+{
+	my ($self, $msg, %args) = @_;
+	return $self->setError ($msg, %args, fatal => 1, 
+        uplevel => 1 + $args{uplevel});
 } 
 
 sub whinge
@@ -604,6 +623,17 @@ sub writeLog    # $line|\@lines, [logprefix => ..,
 {
 	my ($self, $lines_tmp, %args) = @_;
 
+    my $isNotice = $args{notice} || $args{warning} || $args{error};
+    my $fh = $self->{_logHandle};
+	my $fh2 = $args{handle};
+
+    # Require one of the above to be nonzero to proceed.
+    if (!$fh && !$fh2 && !$isNotice && !$self->getDebug())
+    {
+        # return if we have no handle and no imperative to mutter.
+        return 0;
+    } 
+
 	my @lines;
 	
 	if (ref($lines_tmp))
@@ -624,8 +654,6 @@ sub writeLog    # $line|\@lines, [logprefix => ..,
 	    $pfx .= ' ' . $self->{_logprefix};
     } 
 
-	my $fh = $self->{_logHandle};
-
 	for (my $jj=0; $jj<=$#lines; $jj++)
 	{
 		my $line = $lines[$jj];
@@ -633,15 +661,13 @@ sub writeLog    # $line|\@lines, [logprefix => ..,
 
         $self->mutter($line) unless ($args{no_mutter});
 	
-        if ($fh)
-        {	
-		    print $fh "$pfx $line\n";
-        } 
+        print $fh "$pfx $line\n" if ($fh); 
+        print $fh2 "$pfx $line\n" if ($fh2); 
 
         # errors/warnings also to STDERR even if no regular log file.
-        if ($args{notice} || $args{warning} || $args{error})
+        if ($isNotice && (! $args{no_stderr}) )
         {
-	        print STDERR "$pfx $line\n" unless ($args{no_stderr})
+	        print STDERR "$pfx $line\n";
         }
 	} 
 
@@ -687,7 +713,7 @@ sub get # ($keyname, %opts)
     } elsif (defined ($args{defaultvalue})) {
         $rv = $args{defaultvalue};
     } elsif ($args{required}) {
-        $self->abort("Required parameter '$k' was missing.");
+        $self->setError("Required parameter '$k' was missing.", fatal => 1);
     }
 
     # return early if no transformations.
@@ -788,10 +814,15 @@ sub mutter
 {
     my ($self, $msg, %args) = @_;
 
-    my $dbug = $self->{_debug} || return 0;
+    my $dbug = 0;
+    if ($args{always})
+    {
+        $dbug = 'U';
+    } else {
+        $dbug = $self->{_debug} || return 0;
+    }
 
-    $self->writeLog($msg, no_mutter => 1);
-
+    # $self->writeLog($msg, no_mutter => 1);
     if ($dbug eq 'U')
     {
         Baldrick::Util::webhead() unless ($self->{_debug_did_webhead});
@@ -799,11 +830,42 @@ sub mutter
 
         my $cl = $args{divclass} || 'debug';
         my $rs = $args{noprefix} ? '' : '[' . ref($self) . '] ' ;
-        print qq|<div class="$cl">$rs$msg</div>|;
+        my $msg2 = escapeHTML($msg);
+        print qq|<div class="$cl">$rs$msg2</div>|;
     } else {
         print STDERR $msg . "\n";
     }
 }
 
+sub getFunctions # EXPERIMENTAL!
+{
+    my ($self, %args) = @_;
+
+    my $package = ref($self);
+    
+    no strict 'refs';
+    my $ftable = \%{ $package . '::' };
+    
+    my %ancestors = ( $package => $package );
+    map { $ancestors{$_} = $_ } @{ $ftable->{ISA} };
+#    webdump(\%ancestors);
+    
+    my $rv = {};
+    foreach my $k (sort keys %$ftable)
+    {
+        my $v = $ftable->{$k};
+        my $code = *{$v}{'CODE'} || next;  
+        $rv->{$k} = $code;
+
+#        if ($v =~ m/([^*]+)::[^:]+$/)
+#        {
+#            my $pfx = $1;
+#            # if ($ancestors{$pfx})
+#        } 
+        # $self->sendOutput(text => "<li>$k // $v</li>\n");
+    }
+    # $self->sendOutput(text => "$package - ok \n");
+    return $rv;
+}
 
 1;

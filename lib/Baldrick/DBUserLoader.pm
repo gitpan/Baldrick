@@ -68,102 +68,91 @@ sub getDatabase
     return $self->{_database} || die("no database in " . ref($self));
 }
 
+sub _loadUserRecordsFromDatabase
+{
+	my ($self, %args) = @_;
+	
+    my $sql = 0;
+    my $sqlargs = 0;
+    my $explanation = '';
+    
+    if (defined ($args{sql}))
+    {
+        $sql = $args{sql};
+        $sqlargs = requireArg(\%args, 'sqlargs');
+        $explanation = " matching (" . join(", ", @$sqlargs) . ")";
+    } else {
+        ### Identify the KEY FIELD (id,email,username) and KEY VALUE ####
+        my $keyfield = requireAny(\%args, 
+            [ qw(email userid username partialname sql) ] 
+        );
+        # now get the value in {email}, {userid}, etc.
+        $sqlargs = requireArg(\%args, $keyfield);
+        # make it into a list if it isn't one...
+        if (! ref($sqlargs))
+        {
+            $sqlargs = [ $sqlargs ];
+        }
+        ### Formulate the Query using keyfield name/value ################
+        # Queries/load-by-email = select * ...
+        $sql = $self->getConfig("load-by-" . $keyfield, section => 'Queries')
+        || sprintf("SELECT * FROM %s WHERE %s in (/LIST/)",
+            $self->_getUserTableName(), $self->_getRealFieldName($keyfield)
+        );
+        $explanation = " with $keyfield=" . join(",", @$sqlargs);
+    }
+    
+	### Do the query ##############################
+    my $db = $self->getDatabase();
+    my $res = $db->query(sql => $sql, 
+        sqlargs => $sqlargs, 
+        substitute => 1,
+    );
+    
+    if ($#$res < 0)
+    {
+        $self->setError("No users found " . ($explanation||"."))
+            unless ($args{quietfail});
+    }
+    return $res;
+}
 
 sub loadUsers # (%args) return LISTREF
 # args:
 # one of: 	email | userid | username | partialname => LIST or SCALAR.
-#
+# or: sql = expr, sqlargs = []
+#  
 # addrs			=> 0 | 1
 # groups     	=> 0 | 1
 # everything 	=> 0 | 1
 {
 	my ($self, %args) = @_;
 
-	### Identify the KEY FIELD (id,email,username) and KEY VALUE ####
-	my $keyfield = requireAny(\%args, 
-		[ qw(email userid username partialname) ] 
-	);
-
-	# now get the value in {email}, {userid}, etc.
-	my $keyvalues = $args{$keyfield} || $self->abort(
-		"loadUsers: key field " . $keyfield . " missing");
-
-	# make it into a list if it isn't one...
-	if (! ref($keyvalues))
-	{
-		$keyvalues = [ $keyvalues ];
-	} 
-
-	### Formulate the Query using keyfield name/value ################
-	# Queries/load-by-email = select * ...
-	my $sql = $self->getConfig("load-by-" . $keyfield, section => 'Queries')
-        || sprintf("SELECT * FROM %s WHERE %s in (/LIST/)",
-			$self->_getUserTableName(), $self->_getRealFieldName($keyfield)
-            );
-
-	### Do the query ##############################
-	my $db = $self->getDatabase();
-	my $res = $db->query(sql => $sql, 
-        sqlargs => $keyvalues, 
-        substitute => 1,
-    );
-
-	if ($#$res < 0)
-	{
-		$self->setError("No users found with $keyfield=" . 
-            join("/", @$keyvalues)) unless ($args{quietfail});
-		return ($res);
-	}
-
-	# Virtual Field Names - copy each real field into its alias (within loop below)
-	my $vmap = $self->_getVirtualFieldMap();
-
-    my $objclass = $self->getUserObjectClass();
-	my @users;
-	my %initargs = $args{args_init} ? %{ $args{args_init} } : ();
-
-	for (my $i=0; $i<=$#$res; $i++)
-	{
-		my $user = dynamicNew($objclass);
-
-		$user->init( %initargs, creator => $self );	# this will init group/addr listrefs.
-		$user->loadFrom($res->[$i]);
-
-		push (@users, $user);
-
-		# copy real fieldnames into virtual fieldnames.	
-		foreach my $outfield ( keys %$vmap )
-		{
-			my $val='';
-			my @subfields = split(/\s+/, $vmap->{$outfield});
-			foreach my $sf (@subfields)
-			{
-				$val .= ' ' if ($val);
-				$val .= $user->{ $sf };
-			}
-			
-			$user->{$outfield} = $val;
-		} 
-	}
-
-	# add group idents.
-	if ($args{everything} || $args{groups})
-	{
-		$self->loadGroupsForUsers(\@users);
-	} 
-
-	# add group idents.
-	if ($args{everything} || $args{addrs})
-	{
-		$self->loadAddressesForUsers(\@users);
-	} 
-
-    foreach my $u (@users)
+    my $res = $self->_loadUserRecordsFromDatabase(%args);
+    if (! $res || $#$res < 0)
+    { 
+    	return [];
+    }
+	
+	my $users = $self->makeUsersFromData(rows => $res, %args);
+	
+    # add group idents.
+    if ($args{everything} || $args{groups})
     {
-        $u->analyse();
+        $self->loadGroupsForUsers($users);
     } 
 
-	return \@users;
+    # add group idents.
+    if ($args{everything} || $args{addrs})
+    {
+        $self->loadAddressesForUsers($users);
+    } 
+
+    foreach my $u (@$users)
+    {
+        $u->analyse();
+    } 	
+    return $users;
 }
 
 sub loadAddressesForUsers # ($userlist)
@@ -378,24 +367,6 @@ sub _getUserTableName
 	return ($self->getConfig('tableprefix') . 
 			$self->getConfig('user-table', defaultvalue => 'users')
 	);
-}
-
-sub _getVirtualFieldMap
-{
-	my ($self) = @_;
-
-	return $self->getConfig('VirtualFields');
-	# return \%rv;
-}
-
-sub _getRealFieldName # ( $virtualfield )
-# virtual fields are things like email, username, id; these may be represented
-# in the database structure as something else.  Return the actual field name
-# for our virtual name (which, by default, is the same thing).
-{
-	my ($self, $fn) = @_;
-	return $self->getConfig($fn, section => 'VirtualFields', 
-			defaultvalue => $fn);
 }
 
 sub changePasswordForUser

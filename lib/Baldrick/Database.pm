@@ -176,18 +176,20 @@ sub query # (%opts) return LISTREF or HASHREF
 	my ($self, %opts) = @_;
 	my $dbh = $self->getHandle();
 	
-	Baldrick::Util::requireArgs(\%opts, [ qw(sql) ] );
+    my $sql = requireArg(\%opts, 'sql');
 
 	# if 'substitute' is present, then replace /LIST/ in sql statement with a
 	# list of '?,' placeholders of the same length as 'args'.
 	if ($opts{substitute})
 	{
-		$opts{sql} = $self->substitutePlaceholders(%opts);
+		$sql = $self->substitutePlaceholders(%opts);
 	}
 	
 	### PREPARE.
-	my $sth = $dbh->prepare($opts{sql});
-	$self->setError("error in prepare(): " . $dbh->errstr, fatal => 1, uplevel => 1) 
+    $self->mutter("Running SQL: $sql", always => 1) if ($opts{debug});
+	my $sth = $dbh->prepare($sql);
+	$self->setError("error in prepare(): " . $dbh->errstr, 
+        fatal => 1, uplevel => 1) 
 		if (!$sth);
 	
 	### EXECUTE.
@@ -196,23 +198,30 @@ sub query # (%opts) return LISTREF or HASHREF
 	$sth->{RaiseError} = 'On';
     my $cloakError = 1;
 	eval {
+        my $sa = 0; # arg list.
+
 		if (defined ($opts{sqlargs}))
 		{
-            my $sa = $opts{sqlargs};
-            if (ref($sa))
-            {
-			    $rc = $sth->execute(@{ $opts{sqlargs} });	
-            } else {
-                $cloakError = 0;
-                die("sqlargs must be array ");
-            } 
+            $sa = $opts{sqlargs};
 		} elsif (defined ($opts{args})) {	# DEPRECATED.
-            $self->whinge("Database::Query:  use of deprecated 'args'", uplevel => 2);
-			$rc = $sth->execute(@{ $opts{args} });	
+            $self->whinge("Database::Query:  use of deprecated 'args'", 
+                uplevel => 2);
+            $sa = $opts{args};
 		} else {
-            $self->whinge("Database::Query:  failed to use 'sqlargs'", uplevel => 2);
-			$rc = $sth->execute( );
-		}
+            $self->whinge("Database::Query:  failed to use 'sqlargs'", 
+                uplevel => 2);
+        }
+
+        if (ref($sa))
+        {
+            $self->mutter("SQL Args: " . join(", ", @$sa), always => 1) 
+                if ($opts{debug});
+        } elsif ($sa) {
+            $cloakError = 0;
+            die("sqlargs must be array ");
+        } 
+
+        $rc = $sa ? $sth->execute(@$sa) : $sth->execute( );
 	};
 	if ($@)
 	{

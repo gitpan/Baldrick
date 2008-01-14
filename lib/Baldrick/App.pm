@@ -31,6 +31,7 @@ our $startupOptions = {
     savedinputs => '',
     config => '', 
     configpath => 'etc',    # directory to look for other configs in
+    requestparms => { },
 };
 our %texts = (
     baf => 'Baldrick Application Framework',
@@ -52,7 +53,14 @@ sub _globalInit
         "config=s"   => \$startupOptions->{config},
         "configpath=s"   => \$startupOptions->{configpath},
     );
-   
+  
+    foreach my $a (@ARGV)
+    {
+        if ($a =~ m/^([^=]+)=(.*)/)
+        {
+            $startupOptions->{requestparms}->{$1} = $2;
+        } 
+    }  
     return 0;
 }
 
@@ -310,6 +318,12 @@ sub getNextRequest # (%args) return Baldrick::Request
         $startupOptions->{savedinputs} = '';
     } else {
    	    $req->load();
+    } 
+
+    my $rp = $startupOptions->{requestparms};
+    foreach my $k (keys %$rp)
+    {
+        $req->put($k, $rp->{$k});
     } 
 
     $self->{_currentRequest} = $req;

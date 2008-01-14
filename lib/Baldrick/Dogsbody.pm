@@ -199,8 +199,10 @@ sub getTemplate
 
     return $filename if (-f $filename);
 
+    $self->{_PATHS_SEARCHED} = \@badpaths;
 	$self->setError("no template found matching $filename / $filename.$ext; searched paths "
         . join(";", @badpaths), uplevel => 1);
+
 	return 0;
 }
 
@@ -354,7 +356,8 @@ sub sendOutput # ( text=>(text) | template=>filename | dump => object | error =>
 		    my $outref = $self->getOut()->processFile( $fullpath );
     		$request->sendOutput( $outref );
         } else {
-            $self->abort("could not find template $template in path", uplevel => 1);
+            my $paths = join("<br>", @{ $self->{_PATHS_SEARCHED} });
+            $self->abort("could not find template $template in path: $paths", uplevel => 1);
         }
 	} else {
         $self->sendOutput(text => 'ERROR: sendOutput() called without valid parameters');   
@@ -449,7 +452,7 @@ sub processRequest # (%args)
                 
             } 
 
-			$self->dispatchCommand ( %argsForCmd );
+			$self->dispatchCommand ( %argsForCmd ) unless ($self->{_done});
 
             $self->mutter("after command $argsForCmd{cmd}");
 
@@ -712,32 +715,40 @@ sub dispatchCommand # ( %args)
 {
 	my ($self, %args) = @_;
 	my $class = ref($self);
-
+   
 	my $cmd = $args{cmd};	# command (without arg) that came from CGI
 	$self->{_currentCommand} = $cmd;
 
     my $command = $self->_transformCommand($cmd);
+    my %cmdBundle = (
+        %args,  # cmd, cmdlist, cmdcount, etc. 
+        O => $self->getOut(),
+        P => $self->getRequest()->getContents(),
+        Q => $self->getRequest(),
+        # R => $self->getResponse(), 
+        U => $self->getCurrentUser(),
+        command => $command
+    );
+    
 	if (! $command)
 	{
-        return $self->handleDefaultCommand(%args);
+        return $self->handleDefaultCommand(%cmdBundle);
 	}
 
     my $fname = 'handle' . $command;
-
+    $cmdBundle{functionName} = $fname;
+    
     my $coderef = $self->can($fname);
     if (!$coderef)
     {
-	    return $self->handleUnknownCommand( 
-            cmd => $cmd, command => $command, 
-            functionName => $fname, %args 
-        );
+	    return $self->handleUnknownCommand(%cmdBundle);
     } 
 
     my $rv = -1;
     eval {
         # no strict 'refs';
         # $rv = $self->$fname;
-        $rv = &$coderef($self, %args);
+        $rv = &$coderef($self, %cmdBundle);
     };
 	if ($@)
 	{
@@ -746,8 +757,7 @@ sub dispatchCommand # ( %args)
 		my $err = $@;
 		if ( $err =~ m/locate object method "$fname"/)
 		{
-			return $self->handleUnknownCommand( cmd => $cmd, command => $command,
-                functionName => $fname, %args );
+			return $self->handleUnknownCommand(%cmdBundle);
 		} else {
 			return $self->setError($@, fatal => 1, no_stderr => 1);
 		}
@@ -879,6 +889,13 @@ sub getCommandList # () return LIST of { cmd=> ..., cmdargs => ... }
 }
 
 sub abort
+{
+	my ($self, $msg, %args) = @_;
+	$args{uplevel}++;
+    return $self->fatalError($msg, %args);
+}
+
+sub fatalError
 # no_output - don't generate error page (assume it's been done already), just do the
 #    logfile and termination stuff.
 {
@@ -900,7 +917,7 @@ sub abort
     }
 
 	$args{uplevel}++;
-	Baldrick::Turnip::abort($self, $msg, %args); 
+	Baldrick::Turnip::fatalError($self, $msg, %args); 
 }
 
 sub setError

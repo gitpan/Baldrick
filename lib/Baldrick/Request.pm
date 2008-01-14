@@ -357,19 +357,19 @@ sub setCookie
 	return 0;
 }
 
-sub getRemoteIP # () return string like '1.1.1.1', default 127.127.127.127
+sub getRemoteIP # () return string like '1.1.1.1', default 127.0.0.1
 {
 	my ($self) = @_;
-	my $rv = $ENV{REMOTE_ADDR};
+	my $rv = $ENV{REMOTE_ADDR} || '127.0.0.1';
 	
 	# Must sanitize input - digits, dot, colon (for IPv6) only.
     if ( $rv =~ m#([\d\.:]+)# )
     {
         return $1;
-    } 
+    }
 	
 	$self->writeLog("malformed IP $rv", notice => 1);
-	return '127.127.127.127';
+	return '127.0.0.2';
 }
 
 sub saveInputs 

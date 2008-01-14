@@ -19,26 +19,46 @@ use Baldrick::TurnipWagon;
 
 our @ISA = qw(Baldrick::Turnip);
 
-our @requiredInternalFields = qw(tablename primarykey);
-our @optionalInternalFields = qw(pksequence fieldlist config tablemap);
+our @optionalInternalFields = qw(tablename primarykey pksequence fieldlist config tablemap);
 
 sub init    # tablename => ..,  primarykey => .., ...
 {
     my ($self, %args) = @_;
 
     $self->SUPER::init(%args,
-        copyRequired => \@requiredInternalFields,
         copyOptional => \@optionalInternalFields,
         copyDefaults => { config => {} }, 
         required => 0
     );
+
+    # Support legacy 'fieldlist' and 'tablename' by converting into 'tablemap'.
+    if (! $self->{_tablemap}) 
+    {
+        if (my $fl = $self->{_fieldlist})
+        {
+            if (my $tables = $self->getTableNames())
+            {
+                $self->{_tablemap} = { };
+                foreach my $tab (@$tables)
+                {
+                    my $tm = {};
+                    map { $tm->{$_} = '' } @$fl;
+                    $self->{_tablemap}->{$tab} = $tm;
+                } 
+            } 
+        } 
+    }  ## end of not-tablemap thingy.
 
     # handleEdit will store changes here.
     $self->{_update} = {};
     $self->{_fancyupdate} = {};
     $self->{_changecount} = 0;
 
-	$self->loadFrom($args{data}) if ($args{data});
+    if (my $dat = $args{data})
+    {
+        my $la = $args{load_args} || {};
+	    $self->loadFrom($dat, %$la);
+    } 
 	return $self;
 }
 
@@ -65,22 +85,45 @@ sub checkInitOK
 }
 
 sub getFieldList 
+# table => name
+# combined => 0|1
+# implied_ok => take from source
 { 
     my ($self, %args) = @_;
 
+    my $map = $self->{_tablemap};
+
     if (my $tab = $args{table})
     {
-        if (my $map = $self->{_tablemap})
+        if ($map)
         {
             if (my $thismap = $map->{$tab})
             {
+                $self->mutter("GET FIELD LIST $tab: " . 
+                    join(", ", keys %$thismap ));
                 return [ keys %$thismap ];
             } 
+        } else {
+            $self->setError("WARNING: getFieldList($tab) without tablemap", warning => 1);
+        } 
+    } elsif ($args{combined}) {
+        if ($map)
+        {
+            my @rv;
+            foreach my $tab (keys %$map)
+            {
+                my $thismap = $map->{$tab};
+                push (@rv, (keys %$thismap));
+            }
+            return \@rv;
+        } else {
+            $self->setError("WARNING: getFieldList(combined) without tablemap", warning => 1);
         }
     } 
  
     my $rv = $self->{_fieldlist};
     return $rv if ($rv);
+
     if ($args{implied_ok})
     {
         return $self->getImpliedFieldList(%args);
@@ -155,26 +198,53 @@ sub loadFrom    # ($source, prefix => )
 # Load from database row, CGI input stream, etc.
 # Use fieldlist as list of fields to import if available.
 # args:
-#   fieldlist => \@fields   -- else use internal fieldlist or (keys %$source)
+#   fieldlist => \@fields   
+#   fieldlist => 'all' -- get fieldlist from all tables
+#   fieldlist => 'source' 
+#   fieldlist => '*' -- all + source
 #   prefix => prefix on fieldnames in inputs.
 #   no_undef => convert 'undef' to zero.
 {
     my ($self, $source, %args) = @_;
 
+    # Get list of fields to copy - construct it from inputs if not found.
+    my @fieldlist;
+
+    if (defined ($args{fieldlist}))
+    {
+        my $fl = $args{fieldlist};
+        if (ref($fl))
+        {
+            @fieldlist = @$fl;
+        } elsif ($fl eq 'all') {
+            $fl = $self->getFieldList( combined => 1 );
+            @fieldlist = @$fl;
+        } elsif ($fl eq 'source') {
+            @fieldlist = keys (%$source);
+        } elsif ($fl eq '*') {
+            @fieldlist = keys (%$source);
+            $fl = $self->getFieldList( combined => 1 );
+            push (@fieldlist, @$fl);
+        } 
+    }
+    
+    if ($#fieldlist < 0)
+    { 
+        my $fl = $self->getFieldList( combined => 1 );
+        @fieldlist = @$fl if ($fl);
+    } 
+
+    if ($#fieldlist < 0)
+    { 
+        @fieldlist = keys (%$source);
+    } 
+
+    $self->mutter( ref($self) . "::loadFrom(): got field list " . join(", ", @fieldlist) );
+
     my $pfx = $args{prefix} || '';
 
-    # Get list of fields to copy - construct it from inputs if not found.
-    my $fl = $self->getFieldList();
-
-    if ($fl && $#$fl >=0)
-    {
-        $self->mutter( ref($self) . "::loadFrom(): got field list " . join(", ", @$fl) );
-    } else {
-        $fl = $self->getImpliedFieldList(data => $source, prefix => $pfx);
-        $self->mutter( ref($self) . "::loadFrom(): got field list from data - " . join(", ", @$fl) );
-    }
     # Now that we have our fieldlist, copy each one.
-    foreach my $fn (@$fl)
+    foreach my $fn (@fieldlist)
     {
         if (defined ($source->{ $pfx . $fn }))
         {
@@ -277,7 +347,13 @@ sub handleEdit # (ifnputs => ..., [fieldlist => ...], ...) return changecount
 
     foreach my $table (@{ $self->getTableNames() })
     {
-	    my $fieldlist = $args{fieldlist} || $self->getFieldList($table) || [ keys %$self ];
+	    my $fieldlist = $args{fieldlist} || 
+            $self->getFieldList(table => $table) || 
+            [ keys %$self ];
+        $self->mutter("looking to update table $table, fieldlist=" .
+            join(", ", @$fieldlist) );
+
+        my @changedFields;  # just for debug!
 	    foreach my $fn (@$fieldlist)
 	    {
 	        next if ($fn =~ m/^_/); # skip private fields.
@@ -310,8 +386,18 @@ sub handleEdit # (ifnputs => ..., [fieldlist => ...], ...) return changecount
             }
 		
 		    ++$changes;
-            $self->storeChangeInfo($fn, $newval, oldvalue => $oldval);
+            $self->storeChangeInfo($fn, $newval, oldvalue => $oldval,
+                table => $table
+            );
+            push (@changedFields, $fn);
 	    } # next field    
+
+        if ($#changedFields >=0)
+        {
+            $self->mutter("table $table - stored changes to fields: " . join(', ', @changedFields));
+        } else {
+            $self->mutter("table $table - no changes stored.");
+        }
 	} # next table / fieldlist
 
     $self->{_changecount} += $changes;
@@ -335,7 +421,8 @@ sub storeChangeInfo # (fieldname, new-value, [ oldvalue => ...] )
 	$s->{_fancyupdate}->{$fn} = {
 		fieldname => $fn,
 		oldvalue => defined($args{oldval}) ? $args{oldval} : $s->{$fn}, 
-		newvalue => $newval
+		newvalue => $newval,
+        table => $args{table}
 	};
     return $s->{_fancyupdate}->{$fn};
 }
@@ -426,7 +513,8 @@ sub saveChanges # (database=>foo) return change count.
             my %record;
 
             my $up = $args{data} || $self->{_update} || $self;
-            my $fl = $args{fieldlist} || $self->getFieldList(table => $tab) || [ keys %$up ];
+            my $fl = $args{fieldlist} || $self->getFieldList(table => $tab) 
+                || [ keys %$up ];
             $fl = keys (%$self) if ($#$fl<0);
 
             foreach my $k (@$fl)
@@ -488,11 +576,20 @@ sub saveChanges # (database=>foo) return change count.
                 next if (!defined ($up->{$fn}));
                 $tempUpdate{$fn} = $up->{$fn};
             } 
-           $self->mutter("table $table, fields " . join(" ", keys %tempUpdate)); 
-            next if (! %tempUpdate);
+            $self->mutter("table $table, fields " . join(" ", keys %tempUpdate)); 
+                next if (! %tempUpdate);
 
 	        if ($#where >=0)
-	        {
+	        {   
+                foreach my $kk (keys %tempUpdate)
+                {
+                    $self->writeLog(sprintf(
+                        "update %s (%s): %s=%s",
+                        $table, join(', ', @where_args), 
+                        $kk, $tempUpdate{$kk}
+                    ));
+                }
+
 		        $db->update(update => \%tempUpdate, table => $table,
 	                wherelist => \@where, whereargs => \@where_args,
 	                debug => $self->{_debug}
