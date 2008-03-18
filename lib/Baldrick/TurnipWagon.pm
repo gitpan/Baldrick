@@ -2,31 +2,34 @@
 package Baldrick::TurnipWagon;
 use Baldrick::Turnip;
 use Baldrick::Util;
+use Carp;
 
 # A TurnipWagon is a cache of SpecialTurnips.
 use strict;
 
 our @ISA = qw(Baldrick::Turnip);
 
-sub new
+sub init
 {
-    my ($class, %args) = @_;
-    
-    my $s = {
-        _wagonLoad => { },
-        _turnipClass => $args{turnipClass} || 0,
-        _model       => $args{model} || 0,
-        _failedLookups => { }, 
-    };
+    my ($self, %args) = @_;
+   
+    $self->SUPER::init(%args,
+        copyDefaults => {
+            turnipClass => 0,
+            model => 0,
+        }
+    );
 
-    bless ($s, $class);
-    $s->addList($args{load}) if ($args{load});
-    return $s;
+    $self->{_wagonLoad} ||= {};
+    $self->{_failedLookups} ||= { };
+
+    $self->addList($args{load}) if ($args{load});
+    return $self;
 }
 
 sub addItem # ($item, [ key => foo | getkey => \&foo ])
 {
-    my ($s, $item, %args) = @_;
+    my ($self, $item, %args) = @_;
     
     return 0 if (!$item);    
 
@@ -41,76 +44,76 @@ sub addItem # ($item, [ key => foo | getkey => \&foo ])
     } elsif (defined ($args{getkey})) {
         my $keyfunc = $args{getkey};
         $key = &{$keyfunc}($item);
-    } elsif ($s->{turnipClass}) {
-        $key = $item->getUniqueKey();
+    # } elsif ($self->{turnipClass}) {
+    #   $key = $item->getUniqueKey();
     } else {
         $key = $item->getUniqueKey();
     }
     return 0 if (!$key);
 
     # Success; put it inna wagon.
-    $s->{_wagonLoad}->{$key} = $item;
+    $self->{_wagonLoad}->{$key} = $item;
     return 1;
 }
 
 sub addList
 {
-    my ($s, $list, %args) = @_;
+    my ($self, $list, %args) = @_;
     return 0 if (! $list);
 
     my $count = 0;
     foreach my $item (@$list)
     {
-        $count+= $s->addItem($item);
+        $count+= $self->addItem($item);
     } 
     return $count;
 }
 
 sub get # ($key)
 {
-    my ($s, $key, %args) = @_;
-    if (defined ($s->{_wagonLoad}->{$key}))
+    my ($self, $key, %args) = @_;
+    if (defined ($self->{_wagonLoad}->{$key}))
     {
-        return $s->{_wagonLoad}->{$key};
+        return $self->{_wagonLoad}->{$key};
     }
 
     # not found? put into failedLookups()
-    $s->{_failedLookups}->{$key}++;
+    $self->{_failedLookups}->{$key}++;
     return 0;
 }
 
 sub getMatching # ($specialTurnip)
 {
-    my ($s, $other, %args) = @_;
-    return $s->get($other->getUniqueKey(), %args);
+    my ($self, $other, %args) = @_;
+    return $self->get($other->getUniqueKey(), %args);
 }
 
 sub getContents
 {
-    my ($s) = @_;
-    return $s->{_wagonLoad};
+    my ($self) = @_;
+    return $self->{_wagonLoad};
 }
 
 sub getFailedLookupKeys # return LISTREF.
 {
-    my $foo = $_[0]->{_failedLookups};
+    my ($self) = @_;
+    my $foo = $self->{_failedLookups};
     my @bar = keys (%$foo);
     return \@bar;
 }
 
-sub loadFromDatabase
+sub loadFromDatabase    # ( keylist => LIST )
 {
-    my ($s, %args) = @_;
-    my $model = $s->getModel() || 
-        $s->abort("no model to use loading from database");
+    my ($self, %args) = @_;
+    my $model = $self->getModel() || 
+        $self->fatalError("no model to use loading from database");
 
     my @inkeys = @{ $args{keylist}};
     my %outkeys;
     foreach my $k (@inkeys) 
     {
         my $x = $k;
-        my $p = index($x, '|');
-        if ($p)
+        if (my $p = index($x, '|'))
         {
             $x = substr($x,0,$p);
         }
@@ -119,54 +122,63 @@ sub loadFromDatabase
 
     my @outkeys = keys %outkeys;
 
-    my $pklist = $model->splitPrimaryKey();
+    my $pklist = $model->getPrimaryKeys(combined => 1);
 
     my $pk1 = $pklist->[0] || die();
 
     # FIX ME: this is really not a good way to load them, just 
     # using the first key in the list...
+    my $tnames = $model->getTableNames();
+
     my $res = $args{database}->query(
         substitute => 1,
         sql => sprintf("select * from %s where %s in (/LIST/)",
-            $model->{_tablename}, $pk1),
+            $tnames->[0], $pk1),
         sqlargs => \@outkeys, 
-        resultclass => $s->{_turnipClass} || ref($model), 
+        resultclass => $self->{_turnipClass} || ref($model), 
         resultinit => []
     );
     
-    return $s->addList($res);
+    return $self->addList($res);
+}
+
+sub setModel
+# Stash a model turnip which will be used to get parameters for constructing others.
+{
+    my ($self,$m) = @_;
+    $self->{_model} = $m;
+    return $m;
 }
 
 sub getModel
+# Retrieve the model turnip (creating it if necessary).
 {
-    my ($s) = @_;
+    my ($self) = @_;
 
     # Use the model object we were given earlier.
-    if ($s->{_model})
+    if (my $m = $self->{_model})
     {
-        $s->{_model}->checkInitOK();  # maybe init().
-        return $s->{_model};
+        $m->checkInitOK();  # maybe init().
+        return $m;
     } 
   
     # ...or create one based on our class. 
-    if ($s->{_turnipClass})
+    if (my $tc = $self->{_turnipClass})
     {
-        my $x = Baldrick::Util::dynamicNew( $s->{_turnipClass}, softfail_use => 1);
-        $x->init();
-        $s->{_model} = $x;
-        return $x; 
+        my $m = Baldrick::Util::dynamicNew( $tc, softfail_use => 1);
+        $m->init();
+        return $self->setModel($m); 
     }  
 
     # Still none? use the first one in the wagon then...
-    my $contents = $s->{_wagonLoad};
-    my @keys =keys (%$contents);
+    my $contents = $self->{_wagonLoad};
+    my @keys = keys (%$contents);
     if ($#keys>=0)
     {
-        my $x = $contents->{ $keys[0] };
-        $s->{_model} = $x;
-        return $x;
+        my $m = $contents->{ $keys[0] };
+        return $self->setModel($m); 
     } 
-    return $s->abort("TurnipWagon cannot find a model SpecialTurnip()");
+    return $self->abort("TurnipWagon cannot find a model SpecialTurnip()");
 }
 
 1;

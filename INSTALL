@@ -1,40 +1,103 @@
 
 Welcome to the Baldrick Application Framework.
 
-While the libraries are fully functional and reliable, the distribution
-and packaging is still primitive.
-
 Quick Guide to Installation:
+    This is a copy of http://www.baldrickframework.org/book/Installation
 
-- Choose a location for the perl libraries, which are under 
-  lib/Baldrick in the distribution.  Move the "lib/Baldrick" directory 
-  to the appropriate location - this could be in a "lib" directory within
-  your cgi-bin directory, or /usr/local/lib/perl5/site_perl/x.x.x/.
-  The perl modules must remain in a directory called "Baldrick", which
-  should be within your general "lib" directory.
+Step 1. Download and unpack the archive.
 
-- install "baldrick-stub" in your CGI directory, renaming it to 
-  "baldrick-stub".
+Version 0.81 and earlier are just a tar file of Perl modules; 0.82 and later are proper CPAN-style packages. Please get the latest release available. 
 
-- edit the "use lib" statement in baldrick-stub if your installation directory
-  for the libraries is anything other than "lib/Baldrick" or a "Baldrick"
-  directory within the @LIB search path.
+using CPAN:
 
-- run "./baldrick-stub".  Install any missing libraries it complains about,
-  such as Template, Time::HiRes, etc.
+   # perl -MCPAN -e shell
+   cpan> install Baldrick
 
-- In cgi-bin directory, make symlinks to baldrick-stub for whatever 
-  program names you want to invoke it as - "shop", "forum", "signup", etc.
-        ln -s baldrick-stub shop
-        ln -s baldrick-stub forum       ...etc.
-  (Every Baldrick application has the same loader, the stub; it then looks
-  up URLs in the config file to decide how to handle each request.)
+without CPAN:
 
-- Create a config file as "etc/baldrick.cfg". See 
-      http://www.baldrickframework.org/book/Baldrick.cfg 
-  for format and examples.
+    Download the .tar.gz file from FreshMeat, search.cpan.org, or this site, and put in a temporary directory. 
 
-- In the config file, edit PathMap to associate URLs with Modules (handlers).
+   myhost:/tmp$ tar -xzvf Baldrick-0.84.tgz 
+   myhost:/tmp$ cd Baldrick-0.84
+
+Step 2. Run Makefile.PL
+
+(if you're using CPAN, it will run Makefile.PL automatically)
+
+   myhost:/tmp/Baldrick-0.84$ perl Makefile.PL
+
+The Makefile.PL will ask whether you want a 'private' or 'system' install.
+
+A "system" install will place the Baldrick perl modules into the system-wide Perl directories, 
+just like any standard module. Usually, only root can do this.
+
+A "private" install will place the Baldrick modules in a directory of your choice. As Baldrick is designed to operate as part of a web site, and different sites on a shared server might want different Baldrick versions, the installer will recommend a private installation.
+
+If you choose "private", Makefile.PL will provide a list of suggested locations, including your home directory, and something under /var/www (if it exists). Either press enter to accept the default, or provide another directory name.
+
+   Base installation directory: [/home/hucke/cgi-bin/] /www/mysite.com/cgi-bin/
+
+If all goes well, Makefile.PL will generate a Makefile. 
+
+Step 3. Install the Perl modules
+
+Now that a Makefile exists, you can run 'make' to complete the installation.
+
+(CPAN does this for you automatically)
+
+   myhost:/tmp/Baldrick-0.84$ make install
+
+If you chose a "system" install, and if you have permission, this will install the Baldrick modules into the standard Perl library locations.
+
+If you chose a "private" install, this will install the Baldrick modules in a "lib" directory under the directory you specified; and will install the baldrick-stub startup script, and an "etc" with sample config files, in that directory.
+
+ myhost:/tmp/Baldrick-0.84$ cd /var/www/mysite.com/cgi-bin
+ myhost:/var/www/mysite.com/cgi-bin$ ls -arlt
+ total 32
+ -r-xr-xr-x   1 hucke  wheel  1551 Nov 10 19:20 baldrick-stub
+ -r-xr-xr-x   1 hucke  wheel  2487 Nov 10 19:20 baldrick-timing-stub
+ drwxr-x--x  23 hucke  wheel  2560 Jan 16 19:41 ..
+ drwxr-xr-x   5 hucke  wheel   512 Jan 16 19:41 lib
+ drwxr-xr-x   2 hucke  wheel   512 Jan 16 19:41 etc
+ drwxr-xr-x   4 hucke  wheel   512 Jan 16 19:41 .
+
+[edit] Step 4. Choose and install a template system
+
+Because Baldrick is designed to work with multiple template processing systems to generate output, none was installed automatically by CPAN as part of the Baldrick installation. You'll need to manually install a template system.
+
+Presently only Template Toolkit and Text::Template are supported.
+
+   cpan> install Template
+
+If you prefer a different template system, install that instead, then write a TemplateAdapter class for it. Contact the author if you need advice. 
+
+Step 5. Install the sample config files
+
+The config files should be placed in cgi-bin/etc. The distribution files are baldrick.cfg.sample and userloader.cfg.sample; these should be renamed (drop the ".sample") and edited.
+
+   myhost:/tmp/Baldrick-0.82$ cp -R scripts/etc /var/www/example.com/cgi-bin
+
+   NOTE: as of 2007/11/06 these files are under construction and missing from the 0.82 archive; I am working on them all day today and hope to include them in tomorrow's distribution.  Contact hucke@cynico.net if you want sample configs today.
+
+[edit] Step 6. Install baldrick-stub
+
+The included baldrick-stub program is what the web server looks for when dispatching requests.
+
+   myhost:/tmp/Baldrick-0.82$ cp bin/baldrick-stub /var/www/example.com/cgi-bin
+
+You'll want to invoke it under various names that are appropriate for your program. If you're using Baldrick to write a message board, for example, you'll want the URL to be something like "/cgi-bin/forum". To have Baldrick handle requests at that URL, make it a symlink to baldrick-stub
+
+   myhost:/tmp$ cd /var/www/example.com/cgi-bin
+   myhost:.../cgi-bin$ ln -s baldrick-stub forum
+
+[edit] Step 7. Edit your configuration
+
+Edit etc/baldrick.cfg. See the Configuration pages for instructions. At minimum, you'll need to edit the PathMap section to associate the filenames you created by symlinking baldrick-stub, with a module that produces some output.
+[edit] Step 8. Test your installation
+
+To verify your installation is working, you can use the example application provided - see 
+Baldrick::Examples::ExampleDogsbody.
+
 
 Contact hucke@cynico.net if you have questions.
 

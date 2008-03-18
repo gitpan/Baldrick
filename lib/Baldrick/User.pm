@@ -50,6 +50,17 @@ sub loginStateChanged
     return 0;
 }
 
+sub _removeFromGroups # ($groupinfo)
+{
+	my ($self, $groupinfo) = @_;
+
+	my $key = ref($groupinfo) ? $groupinfo->{groupname} : $groupinfo;
+    my $allg = $self->{Groups};
+    my $rv = $allg->{$key};
+    delete $allg->{$key};
+	return $rv;
+}
+
 sub _addToGroups # ($groupinfo)
 # "friend" Baldrick::UserLoader
 # used by Loader to import group record when loading.
@@ -57,8 +68,9 @@ sub _addToGroups # ($groupinfo)
 	my ($self, $groupinfo) = @_;
 
 	my $key = $groupinfo->{groupname};
-	$self->{Groups}->{$key} = $groupinfo;
-	return 0;
+    my $allg = $self->{Groups};
+	$allg->{$key} = $groupinfo;
+	return $groupinfo;
 }
 
 sub _addToAddressList # ($addrinfo)

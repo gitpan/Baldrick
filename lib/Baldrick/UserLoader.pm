@@ -544,7 +544,7 @@ sub handleLogin # Return user object or 0 if failed.
 				my $remember = $self->getLoginFormField("remember");
 				if ($remember && $request->get($remember))
 				{
-					$request->setCookie('username', $name);
+					$request->getResponse()->setCookie('username', $name);
 				} 
 				return $thisuser;
 			} 

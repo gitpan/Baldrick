@@ -23,7 +23,8 @@ modules without re-authenticating, even if those modules were from
 different developers.
 
 As of October 2007, it is ready for production use. Documentation
-is still very lacking, but I am willing to assist in any installation.
+is still very lacking, but I am willing to assist in any installation -
+mail hucke@cynico.net with questions.
 
 The Baldrick Application Framework may be freely distributed, used,
 and modified, under terms of the GNU Public License or the Perl

@@ -32,26 +32,28 @@ sub init # ( %args )
             }
         ); 
     };
-
-
     if ($@)
     {
         die("Dogsbody Initialisation error: $@  (perhaps init() was called without arguments?");
-    } 
-
-    if (my $dir = $self->{_definition}->{'working-directory'})
+    }
+   
+    $self->{_moduleName} = $args{module};
+ 
+    # this can be set to 1 when processing commands to halt processing 
+    # of further commands.
+    $self->{_done} = 0; 
+    
+    $self->{_response} = $self->getRequest()->getResponse();
+    
+    if (my $dir = $self->getDefinitionItem('working-directory'))
     {
         chdir($dir);
     }
 
-    if (my $lf = $self->{_definition}->{logfile})
+    if (my $lf = $self->getDefinitionItem('logfile'))
     {
         $self->openLog(file => $lf);
     } 
-
-	# this can be set to 1 when processing commands to halt processing 
-    # of further commands.
-	$self->{_done} = 0;	
 
 	my $app = $self->{_app};		
 
@@ -78,12 +80,40 @@ sub init # ( %args )
         creator => $self
 	);
 	$out->addObject( $self->{_validator}, "validator");
-
-    ## Output Headers.
-    $self->{_responseHeaders} = [ ]; 
    
 	return $self;
 }
+
+### ACCESSORS ###
+sub getParentHandler    { return $_[0]->{_parentHandler}; }
+sub getValidator    { return $_[0]->{_validator}; }
+sub getCommand      { return $_[0]->{_currentCommand}; }
+sub getCurrentUser  { return $_[0]->{_currentUser}; } 
+sub getDefinition   { return $_[0]->{_definition}; }
+sub getSession      { return $_[0]->{_session}; }
+sub getApp          { return $_[0]->{_app}; }
+sub getOut          { return $_[0]->{_out}; }
+sub getRequest      { return $_[0]->{_request}; }
+sub getResponse     { return $_[0]->{_response}; } 
+sub getUserLoader   { return $_[0]->{_userloader}; }
+sub getModuleName   { return $_[0]->{_moduleName}; }
+
+sub getDefinitionItem   
+{ 
+    my ($self, $k) = @_;
+    my $defs = $self->getDefinition();
+    return $defs->{$k};    
+}
+
+sub getDatabase
+{
+    my ($self) = @_;
+    my $dbname = $self->getDefinitionItem('database') || 'main';
+
+    return ($self->getApp()->getDatabase($dbname) );
+}
+
+#############################
 
 sub _initTemplateAdapter
 {
@@ -130,6 +160,7 @@ sub _initTemplateAdapter
 	$self->{_out} = $adapter;
 
     $adapter->addObject( $self, "handler");
+    $adapter->addObject( $self->getResponse(), "response");
     $adapter->addObject( $self->getRequest(), "req");
     $adapter->addObject( $self->getRequest()->getContents(), "request");
     $adapter->addObject( $self->getUserLoader(), "userloader");
@@ -155,57 +186,14 @@ sub addCommandAlias
     return $ca;
 }
 
-sub debugDump
-{
-    my ($self, $what) = @_;
-   
-    $what =~ tr/a-z/A-Z/;
-
-    foreach my $ch (split (//, $what))
-    {
-        if ($ch eq 'R')
-        {
-            $self->sendOutput( dump => $self->getRequest()); 
-        } elsif ($ch eq 'C') {
-            $self->sendOutput( dump => $self->getRequest()->getContents()); 
-        } elsif ($ch eq 'S') {
-            $self->sendOutput( dump => $self->getSession());
-        }
-    }  
-}
-
 sub getTemplate
 {
 	my ($self, $filename, %args) = @_;
 
     # if full path specified, use it.
     return $filename if ($filename =~ m#^/# && -f $filename);   
-
-	my $out = $self->getOut();
-	my $ext = $out->getPreferredSuffix();
-    my $paths = $out->getIncludePath();
-   
-    my @badpaths; 
-    foreach my $p (@$paths)
-    {
-        my $fullpath = "$p/$filename.$ext";
-        return $fullpath if (-f $fullpath);
-        
-        $fullpath = "$p/$filename";
-        return $fullpath if (-f $fullpath);
-
-        push (@badpaths, $fullpath);
-    } 
-
-    return $filename if (-f $filename);
-
-    $self->{_PATHS_SEARCHED} = \@badpaths;
-	$self->setError("no template found matching $filename / $filename.$ext; searched paths "
-        . join(";", @badpaths), uplevel => 1);
-
-	return 0;
+    return $self->getOut()->findTemplate($filename, %args);
 }
-
 
 sub finish # ()
 {
@@ -215,7 +203,7 @@ sub finish # ()
     # $self->getOut()->finish();    already done in _afterRun()
     $self->SUPER::finish();
  	
-	foreach my $k qw(_request _app _session _out)
+	foreach my $k qw(_request _app _session _out _response)
 	{
 		delete $self->{$k};
 	}
@@ -226,62 +214,6 @@ sub DESTROY # ()
 {
 	my ($self) = @_;
 	$self->finish();
-}
-
-### ACCESSORS ###
-sub getParentHandler    { return $_[0]->{_parentHandler}; }
-sub getValidator  	{ return $_[0]->{_validator}; }
-sub getCommand    	{ return $_[0]->{_currentCommand}; }
-sub getCurrentUser	{ 
-	my ($self) = @_;
-	if (! $self->{_currentUser})
-	{
-		$self->{_currentUser} = new Baldrick::User();
-	}
-	return $self->{_currentUser};
-}
-
-sub getDefinition	{ return $_[0]->{_definition}; }
-sub getSession		{ return $_[0]->{_session}; }
-sub getApp 			{ return $_[0]->{_app}; }
-sub getOut 			{ return $_[0]->{_out}; }
-sub getRequest 		{ return $_[0]->{_request}; }
-sub getUserLoader	{ return $_[0]->{_userloader}; }
-
-sub getDefinitionItem	
-{ 
-    my ($self, $k) = @_;
-    my $defs = $self->getDefinition();
-    return $defs->{$k};    
-}
-
-sub getDatabase
-{
-    my ($self) = @_;
-    my $dbname = $self->getDefinitionItem('database') || 'main';
-
-    return ($self->getApp()->getDatabase($dbname) );
-}
-
-##########
-
-sub doHeader
-{
-	my ($self, %args) = @_;
-
-    return 0 if ($self->{_didheader});          # already done.
-
-	my $req = $self->getRequest();
-    if ($req)
-    {
-	    $req->doHeader(headerlist => $self->getResponseHeaders(), %args);
-        $self->{_didheader} = 1;
-        $Baldrick::Util::DID_WEBHEAD = 1;
-    } else {
-        webhead();
-        print "<b>SERIOUS ERROR: Request not defined, Dogsbody incomplete</b>";
-    } 
-    return 1;
 }
 
 sub sendXML
@@ -296,43 +228,72 @@ sub sendXML
 	}
 }
 
-sub sendOutput # ( text=>(text) | template=>filename | dump => object | error => message |find_template => basename ) 
-#	
+sub sendOutput # ( text=>(text) | template=>filename | dump => object | error => message | errorpage => message )
+# required: one of:
+#   text => text
+#   template => relative or absolute file path
+#   error => error message, to be printed as a div
+#   errorpage => error message, to be printed using error template
+#   dump => object 
+# optional:
+#   wraptag => "TAG attr=foo attr=bar" 
 {
     my ($self, %args) = @_;
 
+    my $response = $self->getResponse();
+    
+    $self->doHeader(%args);
+    
     my $what = requireAny(\%args, 
-        [ qw(error text textref dump template find_template) ]
+        [ qw(error errorpage text textref dump template find_template) ]
     );
-
-	my $request = $self->{_request};
-	$self->doHeader(%args);
-
-    if (my $wt = $args{wraptag})
+        
+    my $wrapper = $args{wraptag};
+    if ($wrapper)
     {
-	    # remember: request->sendOutput() wants a POINTER to the text!
-        my $fred = "<$wt>";
-		$request->sendOutput( \$fred );
+	   $response->sendText("<$wrapper>");
     } 
+      
+    $self->_sendOutputInner($what, %args);
+    
+    if ($wrapper)
+    {
+        $wrapper =~ s/\s+.*//;
+        $response->sendText("</$wrapper>");
+    }
+    return 0; 
+}
+    
+sub _sendOutputInner  # ( 'text'|'template'|..., [text => ..], [template => ..], etc.)
+# the guts of sendOutput; this interpreters the various text|template|error etc. parameters
+# and calls response->sendText() with the desired output.
+{
+	my ($self, $what, %args) = @_;
 
+    my $response = $self->getResponse();
+    
+	my $contents = $args{$what};
+	
     if ($what eq 'error')
     {
-        my $emsg = $args{$what} || $@ || 'unknown error';
-        $self->getOut()->putInternal('errorMessage', $emsg);
+        $response->sendText(sprintf(qq|<div class="%s">%s</div>|, $self->{_divclass_error} || "error", $contents));	
+    } elsif ($what eq 'errorpage') {
+        $contents ||= $@ || 'unknown error';
+        $self->getOut()->putInternal('errorMessage', $contents);
 
         my $fullpath = $self->getTemplate( $self->{_errortemplate} || 'error');
         if ($fullpath)
         {
-            $self->sendOutput(template => $fullpath);
+            return $self->_sendOutputInner('template', %args, template => $fullpath);
         } else {
-            $self->sendOutput(text => qq|<h1>error</h1>\n<p>$emsg</p>| .
-                qq|<p><i>additionally, <b>errortemplate</b> was not defined in | 
-                . ref($self) . qq|</i></p>| . 
-                qq|<hr>Baldrick Application Framework $Baldrick::Baldrick::VERSION|
+            $response->sendText(sprintf(
+                qq|<h1>error</h1>\n<p>%s</p><p><i>additionally, <b>errortemplate</b> was not defined in %s 
+                </i></p><hr>Baldrick Application Framework %s|, 
+                    $contents, ref($self), $Baldrick::Baldrick::VERSION)
             );
         } 
 	} elsif ($what eq 'dump') {
-		my @caller = caller();
+		my @caller = caller(1);
         my $ord = ++$DUMP_ORDINAL;
         my $type = ("".ref($args{dump})) || 'object';
         my $headline = $args{headline} || "$type dumped from $caller[0] $caller[2]";
@@ -341,37 +302,25 @@ sub sendOutput # ( text=>(text) | template=>filename | dump => object | error =>
         $output .= qq#<div id="webdump$ord" class="webdump_body">#;
 		$output .= "<pre>" . Dumper($args{dump}) . "</pre>\n";
         $output .= qq#</div>#;
-		$request->sendOutput(\$output);
+		$response->sendText($output);
 	} elsif ($what eq 'text') {
-	    # remember: request->sendOutput() wants a POINTER to the text!
-		$request->sendOutput( \$args{$what} );
+		$response->sendText($contents);
     } elsif ($what eq 'textref') {
-		$request->sendOutput( $args{ $what } );
+		$response->sendText($contents);
     } elsif ($what eq 'template' || $what eq 'find_template') {
-        my $template = $args{$what};
-
-        my $fullpath = $self->getTemplate($template);
-        if ($fullpath)
+    	my $ta = $self->getOut();
+        if (my $fullpath = $ta->findTemplate($contents))
         {
-		    my $outref = $self->getOut()->processFile( $fullpath );
-    		$request->sendOutput( $outref );
+		    my $outref = $ta->processFile( $fullpath );
+		    $response->sendText($outref);
         } else {
-            my $paths = join("<br>", @{ $self->{_PATHS_SEARCHED} });
-            $self->abort("could not find template $template in path: $paths", uplevel => 1);
+            $self->fatalError($ta->getError(), uplevel => 1);
         }
 	} else {
-        $self->sendOutput(text => 'ERROR: sendOutput() called without valid parameters');   
+        $response->sendText('ERROR: sendOutput() called without valid parameters');   
         return -1;
     } 
-    $self->{_didOutput}++;
-
-    if (my $wt = $args{wraptag})
-    {
-	    # remember: request->sendOutput() wants a POINTER to the text!
-        $wt =~ s/\s+.*//;
-        my $fred = "</$wt>";
-		$request->sendOutput( \$fred );
-    } 
+ 
     return 0;
 }
 
@@ -538,75 +487,79 @@ sub loadCurrentUser
 	return $user;
 }
 
-sub getResponseHeaders
+sub doHeader
 {
-    return $_[0]->{_responseHeaders};
+    my ($self, %args) = @_;
+    return $self->getResponse->doHeader(%args);
 }
 
 sub addResponseHeader
 {
     my ($self, %args) = @_;
-
-    my $rh = $self->getResponseHeaders();
-    if ($args{fullheader})
-    {
-        push (@$rh, $args{fullheader});
-    } else {
-        requireArg(\%args, 'fullheader');   # abort.
-    }
-    return 0;
+    deprecated("dogsbody.addResponseHeader() should be response.addResponseHeader()");
+    return $self->getResponse()->addResponseHeader(%args);
 }
 
 sub initStandardResponseHeaders
+# Add the Session header, and any headers defined in the module definition, to the Response.
 {
     my ($self) = @_;
 
+    my $resp = $self->getResponse();
+    $resp->addResponseHeader(fullheader => $self->getSession()->getHeader());
+    
     my $def = $self->getDefinition();
-
-    $self->addResponseHeader(fullheader => $self->getSession()->getHeader());
-
+   
     # Now copy headers from responseheader-* in the definition.
     # (order is random, for now...)
     foreach my $k (keys %$def)
     {
         if (0== index($k, "responseheader-"))
         {
-            $self->addResponseHeader(fullheader => $def->{$k});
+            $resp->addResponseHeader(fullheader => $def->{$k});
         } 
     } 
 
     return 0;
 }
 
-# Run immediately after parsing of command line.
-# Initialises output headers and loads user.
-# May be overridden if desired, but subclass should probably call parent's _prepareRun().
 sub _prepareRun
+# This is the first phase of dealing with a client request. 
+# Initialises output headers and loads user.
+# May be overridden if desired, but subclass should call parent's _prepareRun().
 {
 	my ($self, %args) = @_;
 
-    # initialise HTTP headers.
+    my $req = $self->getRequest();
+    my $logprefix = $req->getRemoteIP();
+
+    # initialise HTTP headers including Session cookie.
     $self->initStandardResponseHeaders();
 
 	# load current user, and react appropriately to any login errors.
-	if ($self->{_userloader})
+	if (my $ul = $self->{_userloader})
 	{
-		$self->loadCurrentUser();
+		my $user = $self->loadCurrentUser();
 
-		my $err = $self->{_userloader}->getLoginError();
-		if ($err)
+		if (my $err = $ul->getLoginError())
 		{
-			# FIX ME: do something like errorAccessFailure.
-			$self->abort($err);
+			return $self->fatalError($err);
 		}
+
+        if ($user->isLoggedIn())
+        {
+            my $nomen = $user->{username} || $user->{email} || $user->{userid};
+            $logprefix .= "/" . $nomen;
+        }
 	}
 
-	my $accessfail = $self->checkModuleAccess();
-	if ( $accessfail )
+	if (my $accessfail = $self->checkModuleAccess())
 	{
 		$self->errorAccessFailure(%args, failuretype => $accessfail);
 		return -1;
 	}
+
+    $self->{_logprefix} = "[$logprefix]";
 	return 0;
 }
 
@@ -618,8 +571,8 @@ sub beginRun { return 0; }
 
 sub endRun { return 0; }
 
-# Do final cleanup at end of run.
 sub _afterRun
+# Do final cleanup at end of request, including writing out changes to the session file.
 {
 	my ($self)= @_;
 
@@ -630,10 +583,12 @@ sub _afterRun
     {
         $ssn->put($counter, 1+  $ssn->get($counter, defaultvalue => 0));
         $self->getSession()->finish();
-    } 
+    }
+    
+    # WRITE OUT CHANGES TO SESSION - VERY IMPORTANT. 
     $ssn->finish();
 
-	if (! $self->{_didOutput} )
+	if (! $self->getResponse()->didOutput() )
 	{
 		my $cgi = $self->getRequest()->getParameters();
 		$self->sendOutput(error => 
@@ -643,8 +598,9 @@ sub _afterRun
 	return 0;
 }
 
-
 sub errorAccessFailure
+# Take any of several actions when permission to use this module is denied; this could be 
+# a page, a redirect, or defenestration.
 {
 	my ($self, %args) = @_;
 
@@ -657,51 +613,24 @@ sub errorAccessFailure
 	my ($cmd, $cmdarg) = split(/\s+/, $action);
 	if ($cmd eq 'redirect' && $cmdarg)
 	{
-		$self->doRedirect($cmdarg);
-		$self->{_done} = 1;	
+		$self->doRedirect($cmdarg);			
 	} elsif ($cmd eq 'template' && $cmdarg) {
-		$self->sendOutput(template => $cmdarg);
-		$self->{_done} = 1;	
+		$self->sendOutput(template => $cmdarg);	
 	} elsif ($cmd) {
 		$cmd =~ s/[^a-z0-9-_]//g;
 		$self->dispatchCommand(cmd => $cmd, args => $cmdarg, cmdlist => [ $cmd ], 
-			cmdcount => 1, cmdindex => 0);
-		$self->{_done} = 1;	
+			cmdcount => 1, cmdindex => 0);	
 	} else {
-		 $self->abort($message);
+		 $self->fatalError($message);
 	} 
+	$self->{_done} = 1;
+	return 0;
 }
 
 sub doRedirect
 {
 	my ($self, $where, %args) = @_;
-
-#	print "Location: $where\n";
-
-    my %redirs = (
-        301 => 'Moved Permanently', 
-        302 => 'Found',
-        303 => 'See Other',
-        304 => 'Not Modified',
-        307 => 'Temporary Redirect'
-    );
-    my $code = $args{code} || 301;
-    my $msg = $redirs{$code} || $redirs{301};
-
-	my $req = $self->getRequest();
-    if ($req->didHeader())
-    {
-        $self->sendOutput(text => qq#This page has moved <a href="$where">here</a>.#);
-    } else {
-    	$req->doHeader(session => $self->getSession(),
-		    headerlist => [ 
-			    "Status: $code $msg",
-			    "Location: $where"
-		    ]
-	    );
-    }
-
-	$self->{_didOutput} = 1;
+    $self->getResponse()->doRedirect($where, %args, session => $self->getSession());
 }
 
 sub dispatchCommand # ( %args) 
@@ -725,7 +654,7 @@ sub dispatchCommand # ( %args)
         O => $self->getOut(),
         P => $self->getRequest()->getContents(),
         Q => $self->getRequest(),
-        # R => $self->getResponse(), 
+        R => $self->getResponse(), 
         U => $self->getCurrentUser(),
         command => $command
     );
@@ -889,6 +818,7 @@ sub getCommandList # () return LIST of { cmd=> ..., cmdargs => ... }
 }
 
 sub abort
+# deprecated wrapper for fatalError()
 {
 	my ($self, $msg, %args) = @_;
 	$args{uplevel}++;
@@ -907,7 +837,7 @@ sub fatalError
     unless ($args{no_output})
     {
         eval {
-            $self->sendOutput(error => $msg);
+            $self->sendOutput(errorpage => $msg);
     	};
     	if ($@)
     	{
@@ -917,6 +847,7 @@ sub fatalError
     }
 
 	$args{uplevel}++;
+    $@='';
 	Baldrick::Turnip::fatalError($self, $msg, %args); 
 }
 
@@ -999,7 +930,7 @@ sub sendToModule
         parentHandler => $self, 
         %args 
     );
-    $self->{_didOutput} = 1;    # WRONG WRONG!  But the child handler isn't accessible here.
+    
     return $rv;
 }
 1;

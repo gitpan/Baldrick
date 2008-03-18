@@ -12,6 +12,7 @@ my $depend = {
     'Getopt::Long' => 0,
     'MIME::Base64' => 0,
     'Test::Simple' => 0.44,
+    'Attribute::Handlers' => 0, 
 };
 
 

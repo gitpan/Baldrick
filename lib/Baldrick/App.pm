@@ -303,8 +303,9 @@ sub canDoMoreRequests
 
 sub getNextRequest # (%args) return Baldrick::Request
 # Read one HTTP request and return a Baldrick::Request object.  
-# 'args' passed to Request constructor as-is.
-#   args: apachereq, mode 
+# 'args' passed to Request constructor as-is. 
+#   mode => CGI | apache
+#   apache_request => object passed to Baldrick::Trousers handler 
 {
 	my ($self, %args) = @_;
 

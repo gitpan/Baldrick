@@ -74,7 +74,7 @@ sub init    # ( %args )
     }
     
     # set default log prefix to be our class name
-    $self->{_logprefix} ||= ref($self);
+    $self->{_logprefix} ||= $args{logprefix} || ref($self);
 
     return $self;
 }
@@ -152,6 +152,24 @@ sub setDebug
 {
     my ($self, $d) = @_;
     $self->{_debug} = $d;
+}
+
+sub pushDebug
+{
+    my ($self, $val) = @_;
+    $self->{_debugLevelStack} ||= [];
+    push (@{ $self->{_debugLevelStack} }, $self->getDebug());
+    $self->setDebug($val);
+}
+
+sub popDebug
+{
+    my ($self) = @_;
+
+    $self->{_debugLevelStack} ||= [];
+    my $odb = pop (@{ $self->{_debugLevelStack} }) || 0;
+    $self->setDebug($odb);
+    return $odb;
 }
 
 sub dump # ( %opts ) return string
@@ -690,6 +708,43 @@ sub getContents
     }
 }
 
+sub getContentsSubset   # ( (selectors), full_keys => 0|1) return hashref
+# Return a hash containing selected key/value pairs from getContents() - only
+# those with key names having a given prefix/suffix or matching a regex
+# selectors:
+#   regex => perl regex to match keys with; (.*) is OK; return $1$2$3$4$5 or full key
+# OR 
+#   prefix => string, suffix => string -- return keys that begin/end with these
+{
+    my ($self, %args) = @_;
+
+    my $contents = $self->getContents() || {};
+    my $regex  = $args{regex} || '';
+    my $prefix = $args{prefix} || '';
+    my $suffix = $args{suffix} || '';
+    my $wantfull = $args{full_keys} ? 1 : 0;
+    my %rv;
+
+    foreach my $k (keys %$contents)
+    {
+        my $outname = '';
+        if ($regex)
+        {
+            if ($k =~ m/$regex/)
+            {
+                $outname = "$1$2$3$4$5" || $k;
+            } 
+        } elsif ($k =~ m/$prefix(.*)$suffix/) {
+            $outname = $1;
+        } 
+        next unless ($outname);
+        $outname = $k if ($wantfull);
+        $rv{$outname} = $contents->{$k};
+    } 
+
+    return \%rv;
+}
+
 sub get # ($keyname, %opts)
 # optional parameters:
 #   required => 0|1 - fatal error if not present
@@ -817,13 +872,13 @@ sub mutter
     my $dbug = 0;
     if ($args{always})
     {
-        $dbug = 'U';
+        $dbug = 9;
     } else {
         $dbug = $self->{_debug} || return 0;
     }
 
     # $self->writeLog($msg, no_mutter => 1);
-    if ($dbug eq 'U')
+    if ($dbug >= 9) 
     {
         Baldrick::Util::webhead() unless ($self->{_debug_did_webhead});
         $self->{_debug_did_webhead} = 1;
@@ -835,6 +890,27 @@ sub mutter
     } else {
         print STDERR $msg . "\n";
     }
+}
+
+sub transmogrifySelf    # ($classname|$model)
+# Become another class.
+{
+    my ($self, $cl, %args) = @_;
+    if (ref($cl))
+    {
+        $cl = ref($cl);
+    } else {
+        loadClass($cl);
+    }
+
+    my $oldclass = ref($self);
+    bless ($self, $cl);
+
+    if ($self->{_logprefix} eq $oldclass)
+    {
+        $self->{_logprefix} = $cl;
+    } 
+    return $self;
 }
 
 sub getFunctions # EXPERIMENTAL!

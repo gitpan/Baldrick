@@ -19,6 +19,12 @@ sub escapeHTML
     return Baldrick::Util::escapeHTML($text);
 }
 
+sub splitTextLines  # (text, width)
+{
+    my ($self, $text, $width) = @_;
+    return Baldrick::Util::wordsplit($text, $width || 72);
+}
+
 sub round
 {
 	my ($self, $num, $prec) = @_;
@@ -306,6 +312,36 @@ sub getObject
 {
 	my ($self, $name) = @_;
 	return $self->getObjects()->{$name};
+}
+
+sub findTemplate
+# Moved from Baldrick::Dogsbody 2008/02/22
+{
+	my ($self, $filename, %args) = @_;
+	
+    my $ext = $args{suffix} || $self->getPreferredSuffix();
+    my $paths = $self->getIncludePath();
+   
+    my @badpaths; 
+    foreach my $p (@$paths)
+    {
+        my $fullpath = "$p/$filename.$ext";
+        return $fullpath if (-f $fullpath);
+        
+        $fullpath = "$p/$filename";
+        return $fullpath if (-f $fullpath);
+
+        push (@badpaths, $fullpath);
+    } 
+
+    # current directory searched last.
+    return $filename if (-f $filename);
+
+    $self->{_PATHS_SEARCHED} = \@badpaths;
+    $self->setError("no template found matching $filename / $filename.$ext; searched paths "
+        . join(";", @badpaths), uplevel => 1);
+
+    return 0;
 }
 
 ####################### STATIC #############################################

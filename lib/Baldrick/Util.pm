@@ -12,34 +12,46 @@ use Data::Dumper;
 use Config::General;
 
 our @ISA = qw(Exporter);
-our @EXPORT = qw(listToHash mergeHashTrees requireArg requireArgs requireAny 
-    dumpObject dynamicNew uniquifyList easydate easytime easyfulltime 
-    sendMail validEmail cloneObject createObject loadClass
-    assembleDate webdump webhead webprint seekTruth parseOptionList wordsplit 
-    replaceDateWords round parseTimeSpan randomiseList
-    loadConfigFile applyStringTransforms escapeURL escapeHTML
-    deprecated
+# EXPORT is organised into related categories, please keep it that way.
+our @EXPORT = qw(
+    webdump webhead webprint webmoan deprecated dumpObject 
+    requireArg requireArgs requireAny 
+    cloneObject createObject loadClass dynamicNew 
+    listToHash mergeHashTrees uniquifyList randomiseList 
+    easydate easytime easyfulltime assembleDate replaceDateWords parseTimeSpan 
+    sendMail validEmail 
+    parseOptionList loadConfigFile 
+    wordsplit applyStringTransforms escapeURL escapeHTML
+    round seekTruth 
 );
 
 our $WEBDUMP_ORDINAL = 1000;
+our %classesLoaded; # used by loadClass() to avoid redundant calls
 
 sub listToHash # ($listref, $keyfield, %opts)
 # opt unique - fatal error if duplicate keys found.
+# opt makelists - each result is a *listref* of input items.
 {
 	my ($list, $keyfield, %opts) = @_;
 	my %out;
+
+    return {} if (!$list);
 	
 	foreach my $item (@$list)
 	{
 		my $val = $item->{$keyfield};
-		if (defined($out{$val}))
-		{
+        if ($opts{makelists})
+        {
+            $out{$val} ||= [];
+            push (@{ $out{$val} }, $item);
+        } elsif (defined($out{$val})) {
 			if ($opts{unique})
 			{
-				die("non-unique key value for $keyfield ($val)");
+				die("listToHash: non-unique key value for $keyfield ($val)\n");
 			} 
-		} 
-		$out{$val} = $item;
+		} else {
+    		$out{$val} = $item;
+        } 
 	} 
 
 	return \%out;
@@ -167,42 +179,46 @@ sub dumpObject
 
 sub dynamicNew { return createObject(@_); }     # deprecated
 
-sub loadClass
+sub loadClass   # ($classname, [force=>0|1], [softfail_use=>0|1])
 {
 	my ($classname, %args) = @_;
 	$classname =~ s/[^A-Za-z0-9_:]//g;
+
+    unless ( $args{force} )
+    {
+        return 0 if ($classesLoaded{$classname});
+    } 
 	
-	eval "use $classname;\n";
+	eval "use $classname;";
 	if ($@)
 	{
 	    die("createObject: Failed to load perlmod '$classname':\n$@")
                 unless ($args{softfail_use});
     }
+    
+    $classesLoaded{$classname} = 1;
+
     return 0;
 }
 
-sub createObject    # classname, %args
+sub createObject    # (classname, [ new_args => {}, init_args => {}, force_init => 0|1, no_use => 0|1 ])
 # create an object of any arbitrary class.
 {
     my ($classname, %args) = @_;
 
 	$classname =~ s/[^A-Za-z0-9_:]//g;
 
-	my $rv = { };
-    
     unless ($args{no_use})
     {
 		loadClass($classname, %args);
     }
 
-    my $perl = '$rv = new ' . $classname . '();';
-    eval $perl;
+    my $newArgs = $args{new_args} || { };
+	my $rv = $classname->new(%$newArgs);
+    
+#    my $perl = '$rv = new ' . $classname . '();';
+#    eval $perl;
 
-	## OTHER METHOD: 
-	#############################################3
-	#	eval {
-	#		bless ($rv, $classname);
-	#	};
 	if ($@)
 	{
 		die("createObject: could not create class '$classname': $@");
@@ -266,6 +282,7 @@ sub sendMail
     }
     
 	print $fh "To: $to\n";
+	print $fh "From: $args{from}\n" if ($args{from});
 	print $fh "Cc: $args{cc}\n" if ($args{cc});
 	print $fh "Bcc: $args{bcc}\n" if ($args{bcc});
 	print $fh "Subject: $args{subject}\n" if ($args{subject});
@@ -370,12 +387,15 @@ sub _prvwebprint # Guts of webhead/webprint/webdump.
         {
             $app->doPrint($txt); 
             return 0;
+        } else {
+            print $txt;
         } 
     }; 
     if ($@)
     {
         # just print the old-fashioned way if $app couldn't do it.
 	    print $txt;
+        $@='';
     }
     return 0;
 }
@@ -400,6 +420,14 @@ sub webprint # (text) FOR DEBUGGING NOT FOR PRODUCTION
     return _prvwebprint($txt, %args);
 }
 
+sub webmoan # (text) webprint an error message
+{
+    my ($txt, %args) = @_;
+    webhead(%args);
+
+    return _prvwebprint(qq|<div class="error">$txt</div>|, %args);
+}
+
 sub webdump
 # A dumper for debugging, perhaps before headers have been printed.
 # Not for production use.
@@ -407,7 +435,8 @@ sub webdump
 	my ($obj, %args) = @_;	
 
 	webhead();
-    my @caller = caller(1);
+    my @caller = caller(0);
+    my @caller1 = caller(1);
 
     my $depth = $Data::Dumper::Maxdepth;
     if ($args{shallow})
@@ -420,7 +449,7 @@ sub webdump
 	{
         my $type = ("".ref( $w )) || 'object';
         my $ord = ++ $WEBDUMP_ORDINAL;
-        my $output = qq#<div class="webdump_head"><a onClick="javascript:var foo=document.getElementById('webdump$ord');foo.style.display=foo.style.display ? '' : 'none';">$type</a> dumped from $caller[3]() $caller[2]</div>\n#;
+        my $output = qq#<div class="webdump_head"><a onClick="javascript:var foo=document.getElementById('webdump$ord');foo.style.display=foo.style.display ? '' : 'none';">$type</a> dumped from $caller1[3]() $caller[2]</div>\n#;
         $output .= qq#<div id="webdump$ord" class="webdump_body">#;
         $output .= "<pre>" . Dumper($w) . "</pre>\n";
         $output .= qq#</div>#;

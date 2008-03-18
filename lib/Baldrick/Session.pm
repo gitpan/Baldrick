@@ -1,4 +1,3 @@
-
 # Baldrick::Session
 
 # v1.0 2005/06
@@ -33,18 +32,6 @@ my %DEFAULTS = (
     'verify-ip' => 'true',  # true / false / strict
     'hijack-password' => '', # if set, allow admins to take over a user session
 );
-
-sub new # ( %parm )
-# opt config => hashref REQUIRED
-# opt defaults => hashref
-{
-	my ($class, %args) = @_;
-
-    my $self = {};
-    bless ($self, $class);
-    $self->init(%args) if ($args{config});
-    return $self;
-}
 
 sub init
 {
@@ -372,7 +359,7 @@ sub getHeader	# ( [parts => ..] ) return string or listref
 		my $secs = parseTimeSpan($ls);
 		if ($secs > 60)   # ignore anything under 60s, that's silly.
 		{
-			$right .= sprintf(" expires=%s;", Baldrick::Request::staticFormatCookieDate(time() + $secs));			
+			$right .= sprintf(" expires=%s;", Baldrick::Response::staticFormatCookieDate(time() + $secs));			
 		} 	
 	}
 	

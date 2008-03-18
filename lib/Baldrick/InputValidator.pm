@@ -24,13 +24,14 @@ sub init
 
     $self->SUPER::init(%args, 
         copyDefaults => {   
+            sourceValues => 0, 
             request => 0, 
             format_engine => 0,
             parms => 0, 
             config => {}, 
             friendlyPrefix => 'your', 
             publicNames => {}, 
-            errorformat => qq|<br><span class="error">%s</span>|, 
+            errorformat => qq|<div class="error">%s</div>|, 
         }
     );
 
@@ -42,6 +43,11 @@ sub init
 
 sub setCustomErrorMessages { $_[0]->{_customErrs} = $1; }
 sub getCustomErrorMessages { return $_[0]->{_customErrs}; }
+sub setErrorFormat
+{
+    my ($self, $fmt) = @_;
+    $self->{_errorformat} = $fmt;
+}
 
 sub validate
 # Validate a set of inputs based on a config-file section.  Use text rules to
@@ -94,7 +100,7 @@ sub validate
     return $self->errorCount();
 }
 
-sub validateField
+sub validateField   # ($field, rules => "rule1; rule2", [value=..])
 {
     my ($self, $field, %args) = @_;
 
@@ -155,7 +161,7 @@ sub validateField
             if ($rc)
             {
                 # $errs++;
-                return 1;
+                return $rc;
             } 
         }
     } 
@@ -193,12 +199,20 @@ sub getAllErrorMessages	#  ( [list=>1] )
 	return \%outhash;
 }
 
-sub getErrorInfo
+sub setErrorInfo
+{
+	my ($self, $errs) = @_;
+    $self->{_errorInfo} = $errs;
+}
+
+sub getErrorInfo    # (fieldname or ALL)
 # get error object for one field, else 0.
 {
 	my ($self, $fn) = @_;
 	
 	my $errs = $self->{_errorInfo} || {};
+    return $errs if ($fn eq 'ALL');
+
 	if (defined ($errs->{$fn}))
 	{
 		return $errs->{$fn};
@@ -224,14 +238,17 @@ sub getUnseenErrors  # ( [list => 0|1])
     return $args{list} ? [ values(%out) ] : \%out;
 }
 
-sub showError	# ($fieldname)
+sub showError	# ($fieldname or errorinfo)
 # Format an error message appropriately (probably as HTML) and return it.
 # Return null-string if no error for this fieldname.
 # sample usage (in template:) 
 #		<input name="username"> [% validator.showError('username') %]
 {
 	my ($self, $fn) = @_;	
-	my $einfo = $self->getErrorInfo($fn);
+
+    return '' if (! $fn);
+    
+	my $einfo = ref($fn) ? $fn : $self->getErrorInfo($fn);
 	return '' if (! $einfo);
 
     $einfo->{showedError}++;    
@@ -377,7 +394,6 @@ sub checkPresent # ($field)
 	my ($self, $fn, %args) = @_;
 
 	my $val = $self->_getInputValue($fn, %args);
-
 	return 0 if ($val);
 
 	return $self->pushError( $fn, value => $val, 
@@ -642,3 +658,50 @@ sub getPublicName   # ($fn, publicname => foo, pnlabel => publicname|otherpublic
 }
 
 1;
+=head1 NAME
+
+Baldrick::InputValidator - validate user input, such as from web form
+
+=head1 SYNOPSIS
+
+    # ... in Dogsbody::handleSomeThing():
+    my $val = $self->getValidator();
+
+    # handle text rules from config file...
+    $val->validate(ruleset => 'nameOfConfigFileSection'); 
+    
+    # ...or check individual fields directly.
+    $val->checkPresent('email',
+            message => 'please enter youer email address');
+    $val->checkValidEmail('email');
+
+    if ($val->errorCount() > 0)
+    {
+        return $self->sendOutput(template => 'error-page');
+    }
+
+    # in template:
+    [% validator.showError('some-field-name') %]
+    ...produces output only if named field has an error:
+
+        <div class="error">some-message here</div>
+
+    ...but format can be overridden with $val->setErrorFormat("some-string");
+
+head1 DESCRIPTION
+
+Baldrick::InputValidator is a class for validating user input and 
+displaying error messages.
+
+See http://www.baldrickframework.org/book/Baldrick::InputValidator
+
+=head1 AUTHOR
+
+    Matt Hucke
+
+=head1 COPYRIGHT
+
+This program is free software; you can redistribute
+it and/or modify it under the same terms as Perl itself.
+
+=cut

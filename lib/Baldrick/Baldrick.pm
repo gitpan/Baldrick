@@ -2,7 +2,7 @@ package Baldrick::Baldrick;
 use strict;
 
 BEGIN {
-    our $VERSION     = '0.84';
+    our $VERSION     = '0.85';
     # use Exporter ();
     # use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
     # @ISA         = qw(Exporter);
@@ -16,10 +16,10 @@ BEGIN {
     use Time::HiRes;              
     use DBI;                     
     use Config::General; 
-    use Attribute::Handlers;
 
     use Baldrick::Turnip;
     use Baldrick::Util;
+    use Baldrick::Response;
     use Baldrick::Request;
     use Baldrick::Session;
     use Baldrick::Database;

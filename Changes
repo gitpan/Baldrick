@@ -1,5 +1,7 @@
 Revision history for Perl module Baldrick
 
+0.85 2008-03-17 added Response object, major SpecialTurnip rewrite
+
 0.01 Mon Nov  5 13:52:29 2007
     - original version; created by ExtUtils::ModuleMaker 0.49
 

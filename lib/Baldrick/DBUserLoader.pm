@@ -169,7 +169,7 @@ sub loadAddressesForUsers # ($userlist)
 
 	# Identify the USERID field (might be id, email, whatever...)
 	# This is how we find the rows for a particular user in the usergroups table.
-	my $useridfield =  $self->getConfig("Groups/user-id-field-for-groups",
+	my $useridfield =  $self->getConfig("Groups/user-id-field-for-addresses",
             defaultvalue => $self->{_defaultkey} );
 
 	my $userhash = Baldrick::Util::listToHash($userlist, $useridfield,
@@ -183,6 +183,7 @@ sub loadAddressesForUsers # ($userlist)
 	{
 	    my $db = $self->getDatabase();
 		my @alladdrs;
+
 		$db->query(sql => $query, results => \@alladdrs, 
 			sqlargs => [ @userids ] , substitute => 1
         );

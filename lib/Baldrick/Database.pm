@@ -196,31 +196,28 @@ sub query # (%opts) return LISTREF or HASHREF
 	my $rc = -1;
 
 	$sth->{RaiseError} = 'On';
-    my $cloakError = 1;
+    my $cloakError = $self->{_publicErrors} ? 0 : 1;
+    my $sa = 0; # arg list.
+
+	if (defined ($opts{sqlargs}))
+	{
+        $sa = $opts{sqlargs};
+	} elsif (defined ($opts{args})) {	# DEPRECATED.
+        $self->whinge("Database::Query:  use of deprecated 'args'", uplevel => 2);
+        $sa = $opts{args};
+    } else {
+         $self->whinge("Database::Query:  failed to use 'sqlargs'", uplevel => 2);
+    }
+
+    if (ref($sa))
+    {
+        $self->mutter("SQL Args: " . join(", ", @$sa), always => 1) if ($opts{debug});
+    } elsif ($sa) {
+        $cloakError = 0;
+        $self->fatalError("sqlargs must be array ");
+    } 
+
 	eval {
-        my $sa = 0; # arg list.
-
-		if (defined ($opts{sqlargs}))
-		{
-            $sa = $opts{sqlargs};
-		} elsif (defined ($opts{args})) {	# DEPRECATED.
-            $self->whinge("Database::Query:  use of deprecated 'args'", 
-                uplevel => 2);
-            $sa = $opts{args};
-		} else {
-            $self->whinge("Database::Query:  failed to use 'sqlargs'", 
-                uplevel => 2);
-        }
-
-        if (ref($sa))
-        {
-            $self->mutter("SQL Args: " . join(", ", @$sa), always => 1) 
-                if ($opts{debug});
-        } elsif ($sa) {
-            $cloakError = 0;
-            die("sqlargs must be array ");
-        } 
-
         $rc = $sa ? $sth->execute(@$sa) : $sth->execute( );
 	};
 	if ($@)
@@ -300,7 +297,7 @@ sub insert
 #   primarykey => fieldname
 #   pksequence => sequence to allocate key field from.
 #   reload => 0 | 1
-
+#   ignore_keys => [ field list ]
 {
 	my ($self, %args) = @_;
 
@@ -321,11 +318,19 @@ sub insert
         } 
     }
 
+    # ignore some fieldnames
+    my $ignore = {};
+    if (my $itemp = $args{ignore_keys})
+    {
+        map { $ignore->{$_} = 1 } @$itemp;
+    } 
+
     ### BUILD STATEMENT.
 	my @fieldNames;
     my @fieldValues;
 	foreach my $fn (sort(keys %$tdef))
 	{
+        next if ($ignore->{$fn});
 		next unless (defined ($data->{$fn}));
         push (@fieldNames, $fn);
         push (@fieldValues, $data->{$fn});
@@ -341,7 +346,7 @@ sub insert
     $self->mutter("insert(): " . join(", ", @fieldValues));
 
     ## EXECUTE IT.
-    if ($args{no_exec})
+    if ($args{no_exec} || $args{test})
     {
         $self->mutter("EXECUTE SUPPRESSED.");
     } else {
@@ -466,6 +471,7 @@ sub deleteRows
 
     $self->mutter("delete(): $sql");
 #    $self->mutter("delete(): " . join(", ", @valuelist));
+
     return $self->_execSQL(%args, sql => $sql, sqlargs => $whereStuff->{whereargs});
 
 }
@@ -480,7 +486,7 @@ sub update
 # arg where => fragment after 'WHERE' of sql.
 # arg whereargs => positional parameters for WHERE part.
 # 
-# arg test => 0 | 1 - if true, just do setError() with sql/arglist.
+# arg test => 0 | 1 - if true, just do mutter() with sql/arglist.
 {
 	my ($self, %args) = @_;
 
@@ -526,41 +532,45 @@ sub _execSQL
 {
     my ($self, %args) = @_;
 
-    my $OLD_DEBUG = $self->{_debug};
-    $self->{_debug} = $args{debug} if (defined ($args{debug}));
+    my $TESTING = $args{test} || 0;
+
+    $self->pushDebug( 
+        $TESTING ? 9 : 
+        defined ($args{debug}) ? $args{debug} : 
+        $self->getDebug()
+    );
 
     my $sql = requireArg(\%args, 'sql');
     my $sqlargs = requireArg(\%args, 'sqlargs');
+
     my @caller = caller(1);
     my $cname= $caller[3]; $cname =~ s/.*:://;
 
-    my $argtext = join(", ", @$sqlargs);
-    $self->mutter("$cname(): $sql");
-    $self->mutter("$cname(): $argtext");
-
     # TEST MODE: don't really do anything.
-    if ($args{test})
+    $self->mutter("*** TEST MODE *** DOING NOTHING ***") if ($TESTING);
+
+    $self->mutter("$cname(): $sql");
+    $self->mutter("$cname(): " . join(", ", @$sqlargs));
+
+    if (! $TESTING) 
     {
-        my $msg = qq|$sql\n\n-- on $argtext|;
-        $self->setError($msg);
-        $self->mutter("*** TEST MODE *** DOING NOTHING ***");
-        $self->{_debug} = $OLD_DEBUG;
-        return 0;
-    } 
+        #### DO IT.
+    	my $dbh = $self->getHandle();
 
-    #### DO IT.
-	my $dbh = $self->getHandle();
+       	my $sth = $dbh->prepare($sql);
+        if ($sth && $sth->execute(@$sqlargs))
+        {
+	        $sth->finish();	
+        } else {
+	        $self->setError("A database error has occurred.", fatal => 1, 
+                privmsg => "error in sql : $sql\nsql args: " . join(",", @$sqlargs)
+            );
+        } 
+    }
+ 
+    $self->mutter("*** TEST MODE *** DOING NOTHING ***") if ($TESTING);
 
-   	my $sth = $dbh->prepare($sql);
-    if ($sth && $sth->execute(@$sqlargs))
-    {
-	    $sth->finish();	
-    } else {
-	    $self->setError("A database error has occurred.", fatal => 1, 
-            privmsg => "error in sql : $sql -- with $argtext");
-    } 
-
-    $self->{_debug} = $OLD_DEBUG;
+    $self->popDebug();
 	return 0;
 }
 
@@ -674,6 +684,10 @@ sub buildWhere
 # IN:
 #   where => text
 #   wherelist => 
+#   keyfield => 'fieldname'
+#   keyvalue => value found in keyfield.
+#   data => { } -- pull keyvalue from here if needed
+#   update => { } -- pull keyvalue from here if needed
 # return hash of { wherelist => [ expr, expr ], whereargs => [ expr, expr ] }
 {
     my ($self, %args) = @_;

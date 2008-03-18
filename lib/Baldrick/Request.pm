@@ -4,6 +4,7 @@
 
 # created by App->getNextRequest();
 #
+# 2008/02 - split off Baldrick::Response
 
 package Baldrick::Request;
 
@@ -22,21 +23,29 @@ sub init
     $self->SUPER::init(%args, 
         copyDefaults => { 
             mode => 'cgi',      # 'cgi' or 'apache'
-            printer => 0        # an object that implements print(); ordinarly null.
+            contents => {}
         }
     );
 
-    if (my $ar = $args{apachereq})
+    $self->{_response} ||= new Baldrick::Response(
+        %args, 
+        request => $self,
+        creator => $self, 
+        mode => $self->{_mode},
+    );
+
+    if (my $ar = $args{apache_request})
     {
-        $self->{_apachereq} = $ar;
-        $self->{_printer} = $ar;
+        $self->{_apache_request} = $ar;
+        $self->getResponse()->setPrinter($ar);
     } 
-
-	$self->{_didheader} = 0;
-	$self->{_sending_cookies} = { };
-    $self->{_contents} = {};
-
+        
     return $self;
+}
+
+sub getResponse
+{
+	return $_[0]->{_response};
 }
 
 sub loadFromFile # ($filename)
@@ -46,7 +55,7 @@ sub loadFromFile # ($filename)
 
     my $fileContents = loadConfigFile($filename); 
     my $contents = $fileContents->{BaldrickRequest} || $self->abort(
-        "no BaldrickRequest section in inputs file $filename");
+        "no 'BaldrickRequest' section in inputs file $filename");
 
     if (my $e = $contents->{environment})
     {
@@ -84,23 +93,21 @@ sub load # ( [ cgi_object => cgi ] )
 {
 	my ($self, %args) = @_;
 
-	if ($self->{_mode} eq 'apache')
-	{
-		$self->{_cgi_object} = $args{cgi_object} || new CGI();
-	} else {	
-		# DEFAULT MODE: CGI.
-		# Be very careful changing the way it does this - need to 
-		# ensure that 404 handlers (where the original path may be shit)
-		# still work.
-		$self->{_cgi_object} = $args{cgi_object} || new CGI();
-	}
+    $self->{_cgi_object} = $args{cgi_object} || new CGI();
+
+	#if ($self->{_mode} eq 'apache')
+	#{
+	#	$self->{_cgi_object} = $args{cgi_object} || new CGI();
+	#} else {
+	#	$self->{_cgi_object} = $args{cgi_object} || new CGI();
+	#}
 
     if (my $cgi = $self->{_cgi_object})
     {
 		$self->{_contents} = $cgi->Vars();
-        $self->_setPaths(); # store current URL in a few places
-    }
+    } 
 
+    $self->_setPaths(); # store current URL in a few places
 	$self->_trimSpacesFromContents();
 
 	return ($self);
@@ -162,100 +169,20 @@ sub _trimSpacesFromContents # ()
 	return 0;
 }
 
-sub _pushOntoHeaderList # ( listref(headername,headervalue) ) or (string) 
-{
-	my ($hlist, $stuff) = @_;
-	if (ref($stuff))
-	{
-		push (@$hlist, "$stuff->[0]:$stuff->[1]");
-	} else {
-		push (@$hlist, $stuff);
-	}
-}
-
-sub didHeader # () return 1 or 0 if did header already.
-{
-    return ($_[0]->{_didheader} || 0);
-}
-
-sub doHeader # ( [ session => .., ctype => .., headers => .., headerlist => ..] ) 
-# arg	session => session object
-# arg	ctype => content-type (default text/html)
-# arg	headers => { 'header1'=>'value1' ... }	-- send arbitrary headers
-# arg	headerlist => [ "header1:value1", "header2:value2 ] -- send arbitrary headers in a particular order
-# arg	headerlist => [ [ 'header1', 'value1' ], ['header2', 'value2'], ...] -- same thing, but with sublists instead of strings.
+sub doHeader # ( [ session => .., ctype => .., headers => .., headerlist => ..] )
+# DEPRECATED. 
 {
 	my ($self, %args) = @_;
-	if ($self->didHeader())
-    {
-        return 0 unless ($args{force});
-    } 
-
-	my $cgi = $self->{_cgi_object};
-
-	my @myheaders;	# Our Output.
-
-	# first send any headers that the app specified in 'headerlist'
-	if ($args{headerlist})
-	{
-		foreach my $hdr (@{ $args{headerlist} })
-		{
-			_pushOntoHeaderList(\@myheaders, $hdr);
-		} 
-	}
-
-	# do the same for 'headers' hash.
-	if ($args{headers})
-	{
-		foreach my $k (keys %{ $args{headers} }) 
-		{
-			_pushOntoHeaderList(\@myheaders, "$k:" . $args{headers}->{$k});
-		} 
-	} 
-
-	# Session ID.	
-	push (@myheaders, $args{session}->getHeader())
-		if ($args{session});
-
-	# Various cookies.
-	my $clist = $self->{_sending_cookies};
-	foreach my $cname (keys %$clist)
-	{
-		push (@myheaders, "Set-Cookie: $cname=$clist->{$cname}");
-	} 
-
-	# And finally the content type.
-	my $ct = $args{ctype} || 'text/html';
-	push (@myheaders, "Content-type: $ct");
-
-	# BUILD AND SEND.
-	for (my $jj=0; $jj<=$#myheaders; $jj++)
-	{
-		chomp($myheaders[$jj]);
-	} 
-
-	# Must send it all with a single write op.
-    my $hdrs = join("\n", @myheaders) . "\n\n" ;
-	$self->sendOutput( \$hdrs);
-
-    # FIXME: use modperl for this if available...
-
-	$self->{_didheader} = 1;
-	return 1;
+    deprecated("request.doHeader() should become response.doHeader()");
+    return $self->getResponse()->doHeader(%args);	
 }
 
 sub sendOutput # ( $$text : REFERENCE to text string) return 0
 # text is passed by reference to avoid huge things on stack!
 {
 	my ($self, $textref) = @_;
-
-    if (my $p = $self->{_printer})
-    {
-	    $p->print($$textref);
-    } else {
-	    print $$textref;
-    } 
-	return 0;
+    deprecated("request.sendOutput() should become response.sendOutput()");
+    return $self->getResponse()->sendText($textref);
 }
 
 # Accessors referencing standard web environment vars.
@@ -279,7 +206,7 @@ sub getRemoteUser
 	return $ENV{REMOTE_USER};
 }
 
-sub getServerName   # ()
+sub getServerName  
 {
     return $ENV{SERVER_NAME};
 }
@@ -347,14 +274,10 @@ sub getCookie # ($cookie-name) return cookie-value or ''.
 }
 
 sub setCookie
-# This just stashes it for later.  doHeader() will eventually
-# be called, and we send the cookies then.
 {
-	my ($self, $name, $value) = @_;
-
-	my $clist = $self->{_sending_cookies};
-	$clist->{$name} = $value;
-	return 0;
+	my ($self, @extra) = @_;
+    deprecated("request.setCookie() should be response.setCookie()");
+	return $self->getResponse()->setCookie(@extra);
 }
 
 sub getRemoteIP # () return string like '1.1.1.1', default 127.0.0.1
@@ -484,16 +407,4 @@ sub createURL # ( [ proto => .. , server => .., port => .., path => .., querystr
         $proto, $server, $qs);
 }
 
-##### STATICS ###############################################################
-
-sub staticFormatCookieDate # ( $time-since-epoch )
-# Format a date appropriately for the 'expires' field of a Set-Cookie header.
-{
-	my ($time) = @_;
-	
-	#  DAY, DD-MMM-YYYY HH:MM:SS GMT
-	my @expire = gmtime($time);
-	my $rv = POSIX::strftime("%a, %d-%b-%Y %H:%M:%S", @expire);
-	return "$rv GMT";
-}
 1;
