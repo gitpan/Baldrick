@@ -62,7 +62,7 @@ sub _getFileName # ( $sid )
     return "$self->{_directory}/$sid.ses";
 }
 
-sub _loadAnySession
+sub loadAnySession
 ## Load an existing session file into $args{out}
 # DO NOT MODIFY ANY PART OF $self !! 
 {

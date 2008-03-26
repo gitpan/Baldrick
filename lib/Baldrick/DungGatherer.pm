@@ -15,6 +15,7 @@ sub init
 {
     my ($self, %args) = @_;
 
+    $self->{_framework} ||= $args{framework};
     if (my $mi = $args{moduleinfo})
     {
 #        $self->setModuleInfo($mi);
@@ -32,6 +33,11 @@ sub init
     return $self;
 }
 
+sub getFramework
+{
+    my ($self) = @_;
+    return $self->{_framework};
+}
 
 sub setRequestObjects { $_[0]->{_requestObjects} = $_[1]; }
 sub getRequestObjects { return $_[0]->{_requestObjects}; }
@@ -49,23 +55,26 @@ sub startRequest
     $self->setModuleInfo($modinf);
 
     my $def = $modinf->{definition};
-    my $ro = { 
+    
+    # set up request Objects,
+    my $ro = {  
         request => requireArg(\%args, 'request'), 
         config => {}
     };
 
-    if (my $cfgfile = $modinf->{definition}->{'module-config'})
+    if (my $cfgfile = $def->{'module-config'})
     {
         $ro->{config} = $self->_loadModuleConfig($modinf->{module}, $cfgfile); 
     } 
 
-    $ro->{userloader} = (defined $args{userloader}) ? $args{userloader} :
-        $framework->getUserLoader( $def->{"user-class"} || 'default' );
-
     $ro->{session} = (defined $args{session}) ?  $args{session} :
         $self->_loadSession( %$ro, label => $def->{'session-manager'} );
 
+    $ro->{userloader} = (defined $args{userloader}) ? $args{userloader} :
+        $framework->getUserLoader( $def->{"user-class"} || 'default' );
+
     $self->{_requestObjects} = $ro;
+
     return $ro;
 }
 
@@ -120,22 +129,25 @@ sub _loadSession # ( request => .., cfglabel => ..)
     my ($self, %args) = @_;
 
     my $req = requireArg(\%args, 'request');
-    my $label = $args{cfglabel} || 'default';
+    my $label = $args{label} || 'default';
 
     my $session = 0;
     if ($label eq 'null' || $label eq 'none')
     {
+        # Null session manager with default config
         $session = Baldrick::Session::factoryCreate(
             config => { type => 'null' },
             servername => $req->getServerName(),
         );
     } else {
+        # Regular session manager (might also be null sessions, but with config)
         my $cfg = $self->getConfig($label, section => "SessionManager",
             defaultvalue => { }, warning => 1
         );
         $session = Baldrick::Session::factoryCreate(
             label => $label, config => $cfg, creator => $self,
-            request => $req, servername => $req->getServerName()
+            request => $req, servername => $req->getServerName(),
+            framework => $self->getFramework()
         );
     }
 

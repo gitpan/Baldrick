@@ -17,7 +17,7 @@ our @EXPORT = qw(
     webdump webhead webprint webmoan deprecated dumpObject 
     requireArg requireArgs requireAny 
     cloneObject createObject loadClass dynamicNew 
-    listToHash mergeHashTrees uniquifyList randomiseList 
+    listToHash listToTree mergeHashTrees uniquifyList randomiseList 
     easydate easytime easyfulltime assembleDate replaceDateWords parseTimeSpan 
     sendMail validEmail 
     parseOptionList loadConfigFile 
@@ -55,6 +55,47 @@ sub listToHash # ($listref, $keyfield, %opts)
 	} 
 
 	return \%out;
+}
+
+sub _attachTreeNode
+{
+    my ($tree, $newnode, $keyfields, $offset, %args) = @_;
+
+    if (my $thiskey = $keyfields->[$offset])
+    {
+        my $keyval = $newnode->{$thiskey};
+
+        if ($offset < $#$keyfields)
+        {
+            $tree->{$keyval} ||= {};
+            _attachTreeNode($tree->{$keyval}, $newnode, $keyfields, 1+$offset, %args);
+        } elsif ($args{one_leaf})  {
+            $tree->{$keyval} = $newnode;
+        } else {
+            $tree->{$keyval} ||= [];
+            push (@{ $tree->{$keyval} }, $newnode);
+        } 
+    } 
+}
+
+sub listToTree
+{
+    my (%args) = @_;
+   
+    my $tree = $args{tree} || { };
+
+    my $keyfields = $args{keyfields} || die("no key fields for listToTree");
+
+    if (my $list = $args{list})
+    {
+        foreach my $item (@$list)
+        {
+            _attachTreeNode($tree, $item, $keyfields, 0, %args);
+        }
+    } else {
+        webprint("warning: listToTree called with no list");
+    }
+    return $tree;
 }
 
 sub mergeHashTrees # 

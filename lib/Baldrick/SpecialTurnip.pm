@@ -363,11 +363,33 @@ sub getFieldMap # (table => TABLE-NAME) or (combined => 1) return HASHREF
             } 
         } 
         return \%allFieldMap;
-    } elsif (my $tab = requireArg(\%args, 'table') ) {
+    } elsif (my $tab = $args{table}) { 
         my $tinfo = $self->getTableInfo($tab);
         return $tinfo->{fieldmap} || {};
+    } elsif ($args{main_table}) {
+        my $tab = $self->getMetaInfo('main_table') || $self->fatalError("no main table defined");
+        my $tinfo = $self->getTableInfo($tab);
+        return $tinfo->{fieldmap} || {};
+    } else {
+        $self->requireAny( [ qw(main_table table combined) ] );
     } 
     ## NOTREACHED.
+}
+
+sub getFieldValues  # ( (table=> tablename) || (combined => 1) ) return LISTREF 
+# Get a limited set of the fields in this object - from one table, or 'combined'.
+# useful when we come from a JOIN, and you want to see what's in one table without 
+# clutter from the other.
+{
+    my ($self, %args) = @_;
+
+    my $fm = $self->getFieldMap(%args);
+    my $rv = {};
+    foreach my $k (keys %$fm)
+    {
+        $rv->{$k} = $self->{$k};
+    } 
+    return $rv;
 }
 
 sub getFieldList    # ( (table=> tablename) || (combined => 1) ) return LISTREF
@@ -892,7 +914,7 @@ sub formatLogLines  # ( [ what => 'object description' ] , [ who => 'editor' ] )
 
 	my $update = $self->getFancyUpdate();
 
-    my $pfx = $self->formatLogPrefix(%args);
+    my $pfx = $args{logprefix} || $self->formatLogPrefix(%args);
 	
 	my @rv;
 	foreach my $k (sort keys %$update)
@@ -1158,7 +1180,10 @@ sub validateContents
         {
             if (my $rule = $fieldmap->{$fn})
             {
-                my $err = $val->validateField($fn, rules => $rule);
+                my $err = $val->validateField($fn, rules => $rule, 
+                    fix => $args{fix} 
+                );
+
                 if ($err)
                 {   
                     $self->{_editerrors}->{$fn} = $err;

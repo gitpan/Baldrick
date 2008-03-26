@@ -892,7 +892,7 @@ sub mutter
     }
 }
 
-sub transmogrifySelf    # ($classname|$model)
+sub transmogrifySelf    # ($classname|$model)   # return $self
 # Become another class.
 {
     my ($self, $cl, %args) = @_;

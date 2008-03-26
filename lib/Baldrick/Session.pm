@@ -145,14 +145,14 @@ sub _assertNullType
 }
 
 sub load
-# Wrapper for _loadAnySession that then copies contents into $self->{_contents}.
+# Wrapper for loadAnySession that then copies contents into $self->{_contents}.
 # Allows loadAnySession to operate without touching _contents.
 {
     my ($self) = @_;
 
     my %contents = ();
 
-    my $rv = $self->_loadAnySession(sid => $self->getSID(), out => \%contents);
+    my $rv = $self->loadAnySession(sid => $self->getSID(), out => \%contents);
     if ($rv==0)
     {
         $self->{_contents} = \%contents;
@@ -190,13 +190,13 @@ sub open # ( request => ..., %args )
     if ($self->{_preloaded})
     {
         # my %junk;
-        # my $err = $self->_loadAnySession(sid => $sidWanted, out => \%junk); 
+        # my $err = $self->loadAnySession(sid => $sidWanted, out => \%junk); 
         $self->setID($sidWanted, %args);
         return 0;
     } 
 
     my %contents = ();
-    my $err = $self->_loadAnySession(sid => $sidWanted, out => \%contents);
+    my $err = $self->loadAnySession(sid => $sidWanted, out => \%contents);
 
     $self->mutter("loading SID $sidWanted, status=$err");
     if ($err)
@@ -229,7 +229,7 @@ sub finish # ()
     if ($self->{_changed})
     {
         $self->put("SESSION_UPDATED", easyfulltime());
-        $self->write();
+        $self->write(from_finish => 1);
     }
 
     return 0 if ($self->{_finished});
@@ -301,7 +301,7 @@ sub _idInUse
     return 0;
 }
 
-sub _loadAnySession
+sub loadAnySession
 {
     my ($self) = @_;
     $self->_assertNullType();
@@ -764,17 +764,6 @@ sub factoryCreate    # STATIC ( type => file|null, config => .. )
         return (new Baldrick::Session(%args, type => 'null'));
     } elsif ($type eq 'database') {
         $classname = 'Baldrick::DatabaseSession';
-
-        unless ($args{database})
-        {
-            my $cr = requireArg(\%args, 'creator');
-            my $dsn = $config->{database} || 
-                $cr->abort("database not specified in SessionManager config");
-            my $db = $cr->getDatabase($dsn) || 
-                $cr->abort("cannot open database $dsn for sessions");
-            $args{database} = $db;
-        } 
-
     } elsif ($type eq 'file') {
         $classname = 'Baldrick::FileSession';
     } elsif ($type) {

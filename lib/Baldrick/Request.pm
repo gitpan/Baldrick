@@ -61,7 +61,7 @@ sub loadFromFile # ($filename)
     {
         map { $ENV{$_} = $e->{$_}; } keys %$e;
     } else { 
-        $self->abort( "no environment in inputs file $filename");
+        $self->whinge( "no environment in inputs file $filename");
     }
 
     if (my $p = $contents->{parms})

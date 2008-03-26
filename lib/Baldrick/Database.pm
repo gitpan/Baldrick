@@ -14,10 +14,10 @@ our %tabledefs;	# = ( table1 => {field1=>def,field2=>def,...}, table2=>... )
 
 sub new 
 {
-	my ($class, %opts) = @_;
+	my ($class, %args) = @_;
     my $self = {};
     bless ($self, $class);
-    $self->init(%opts) if (%opts);
+    $self->init(%args) if (%args);
     return $self;
 }
 
@@ -156,16 +156,17 @@ sub markTime
 
 ### QUERYING METHODS ######################################################
 
-sub execsql # ( $sql, %opts ) 
+sub execsql # ( $sql, %args ) 
 # simple wrapper for dbh->do
 {
-	my ($self, $sql, %opts) = @_;
+	my ($self, $sql, %args) = @_;
 	return ( $self->getHandle()->do($sql) );
 }
 
-sub query # (%opts) return LISTREF or HASHREF
+sub query # (%args) return LISTREF or HASHREF
 # arg sql => ... REQUIRED; can have positional parameters like ?,?,?...
 # arg sqlargs => [ positional-parameter-list ] 
+# arg for_arg_lists => [ list1, list2, list3 ] - repeat query for each arg list
 # substitute => 0|1 substitute placeholders for /LIST/
 #RESULTS: return as LISTREF by default; can also be put into hash by some key.
 # arg results => \@listref
@@ -173,60 +174,67 @@ sub query # (%opts) return LISTREF or HASHREF
 # arg keyfield => 'fieldname'  (required if using resulthash).
 # arg onerecord => 0 | 1 (return just one rec, not array or hash)
 {
-	my ($self, %opts) = @_;
+	my ($self, %args) = @_;
 	my $dbh = $self->getHandle();
 	
-    my $sql = requireArg(\%opts, 'sql');
+    my $sql = requireArg(\%args, 'sql');
 
 	# if 'substitute' is present, then replace /LIST/ in sql statement with a
 	# list of '?,' placeholders of the same length as 'args'.
-	if ($opts{substitute})
+	if ($args{substitute})
 	{
-		$sql = $self->substitutePlaceholders(%opts);
+		$sql = $self->substitutePlaceholders(%args);
 	}
 	
 	### PREPARE.
-    $self->mutter("Running SQL: $sql", always => 1) if ($opts{debug});
+    $self->mutter("Running SQL: $sql", always => 1) if ($args{debug});
 	my $sth = $dbh->prepare($sql);
 	$self->setError("error in prepare(): " . $dbh->errstr, 
-        fatal => 1, uplevel => 1) 
-		if (!$sth);
+        fatal => 1, uplevel => 1) if (!$sth);
 	
 	### EXECUTE.
 	my $rc = -1;
 
 	$sth->{RaiseError} = 'On';
     my $cloakError = $self->{_publicErrors} ? 0 : 1;
-    my $sa = 0; # arg list.
 
-	if (defined ($opts{sqlargs}))
+    my @arglists;
+
+	if (my $sa = $args{sqlargs} )
 	{
-        $sa = $opts{sqlargs};
-	} elsif (defined ($opts{args})) {	# DEPRECATED.
+        $self->fatalError("sqlargs must be array ") unless ref($sa);
+        $self->mutter("SQL Args: " . join(", ", @$sa), always => 1) if ($args{debug});
+        push (@arglists, $sa);
+	} elsif (my $sa = $args{args}) {
         $self->whinge("Database::Query:  use of deprecated 'args'", uplevel => 2);
-        $sa = $opts{args};
+        $self->fatalError("sqlargs must be array ") unless ref($sa);
+        push (@arglists, $sa);
+    } elsif (my $al = $args{for_arg_lists}) {
+        push (@arglists, @$al);
     } else {
          $self->whinge("Database::Query:  failed to use 'sqlargs'", uplevel => 2);
     }
 
-    if (ref($sa))
+    # Always exec at least once.
+    if ($#arglists < 0)
     {
-        $self->mutter("SQL Args: " . join(", ", @$sa), always => 1) if ($opts{debug});
-    } elsif ($sa) {
-        $cloakError = 0;
-        $self->fatalError("sqlargs must be array ");
+        push (@arglists, []);
     } 
 
 	eval {
-        $rc = $sa ? $sth->execute(@$sa) : $sth->execute( );
+        foreach my $sa (@arglists)
+        {
+            $self->mutter("executing with args: " . join(", ", @$sa));
+            $rc = $sth->execute(@$sa);
+        } 
 	};
 	if ($@)
 	{
-		print STDERR "sql error in: $opts{sql}\n";
+		print STDERR "sql error in: $args{sql}\n";
 
         # if _debug is set give real error message else meaningless one, for security.
-        my $msg = $@ . " in sql: $opts{sql}" ;
-        my $pubmsg = $self->{_debug} ? $msg : 
+        my $msg = $@ . " in sql: $args{sql}" ;
+        my $pubmsg = ($args{debug} || $self->{_debug}) ? $msg : 
             $cloakError ? "A database error has occurred." 
             : $msg;
 		$self->setError($pubmsg, 
@@ -234,36 +242,36 @@ sub query # (%opts) return LISTREF or HASHREF
         );
 	} 	
 	
-	# if opts{results} (a listref) is provided, append all query results to end;
+	# if args{results} (a listref) is provided, append all query results to end;
 	# else, just use an anon list.  
-	my $res = (defined $opts{results}) ? $opts{results} : [];
+	my $res = (defined $args{results}) ? $args{results} : [];
 	my $count=0;
 
-	return $rc if ($opts{nofetch});
-	return $rc if ($opts{sql} =~ m/^delete/i);
-	return $rc if ($opts{sql} =~ m/^update/i);
+	return $rc if ($args{nofetch});
+	return $rc if ($args{sql} =~ m/^delete/i);
+	return $rc if ($args{sql} =~ m/^update/i);
 
 	# alias parameter.
-	$opts{resultanalyse} ||= $opts{resultanalyze};
+	$args{resultanalyse} ||= $args{resultanalyze};
 
 	# fetch results into $res arrayref.
 	while (my $r = $sth->fetchrow_hashref())
 	{
 		++$count;
-		if ($opts{resultclass})
+		if ($args{resultclass})
 		{
 			# print "Content-type: text/plain\n\n";
-			# print "$opts{resultclass}<br>\n";
+			# print "$args{resultclass}<br>\n";
 
-			bless($r, $opts{resultclass});
+			bless($r, $args{resultclass});
 
-			if ($opts{resultinit})
+			if ($args{resultinit})
 			{
-				$r->init( @{ $opts{resultinit} } );
+				$r->init( @{ $args{resultinit} } );
 			}
-			if ($opts{resultanalyse})
+			if ($args{resultanalyse})
 			{
-				$r->analyse( @{ $opts{resultanalyse} } );
+				$r->analyse( @{ $args{resultanalyse} } );
 			}
 		} 
 		push (@$res, $r);
@@ -271,17 +279,17 @@ sub query # (%opts) return LISTREF or HASHREF
 	
 	# if resulthash/keyfield are supplied, then copy each record into the resulthash indexed
 	# by whatever the value of its 'keyfield' (primary key, usually) is.
-	if (defined($opts{resulthash}) && defined($opts{keyfield}))
+	if (defined($args{resulthash}) && defined($args{keyfield}))
 	{
 		foreach my $r (@$res)
 		{
-			my $k = $r->{ $opts{keyfield} };
-			$opts{resulthash}->{$k} = $r;
+			my $k = $r->{ $args{keyfield} };
+			$args{resulthash}->{$k} = $r;
 		}
 	}
 
 	# onerecord: return only one record, not an array; 0 if empty.
-	if ($opts{onerecord})
+	if ($args{onerecord})
 	{
 		return $#$res>=0 ? $res->[0] : 0;
 	} 
@@ -381,7 +389,7 @@ sub insert
 
 sub executeStatement
 {
-	my ($self, $sth, $parmlist, %opts) = @_;
+	my ($self, $sth, $parmlist, %args) = @_;
 	my $rc = 0;
 
     if (!$sth) 
@@ -396,12 +404,12 @@ sub executeStatement
 
 	if (!$rc)
 	{
-        $self->whinge("sql error in $opts{sql}\n");
+        $self->whinge("sql error in $args{sql}\n");
         $self->whinge("args: " . join(", ", @$parmlist) . "\n");
    
         my $errstr = $sth ? $sth->errstr() : $self->getHandle()->errstr(); 
 		$self->setError("error executing sql: $errstr", 
-            fatal => !$opts{softfail}, uplevel => 1 + $opts{uplevel});
+            fatal => !$args{softfail}, uplevel => 1 + $args{uplevel});
 	} 
 
 	return $rc;

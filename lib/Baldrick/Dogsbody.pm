@@ -25,7 +25,7 @@ sub init # ( %args )
             copyOptional => [  qw(config command userloader 
                 default_cmd default_args cmd_parm 
                 errortemplate templatedir cmdAliases
-                parentHandler) ],
+                parentHandler commandHandlers) ],
             copyDefaults => {
                 errortemplate => 'error',
                 cmdAliases => { },
@@ -398,7 +398,6 @@ sub processRequest # (%args)
                 {
                     $self->sendOutput(text => "<li>command trace: cmd=$argsForCmd{cmd}</li>");
                 } 
-                
             } 
 
 			$self->dispatchCommand ( %argsForCmd ) unless ($self->{_done});
@@ -651,7 +650,6 @@ sub dispatchCommand # ( %args)
     my $command = $self->_transformCommand($cmd);
     my %cmdBundle = (
         %args,  # cmd, cmdlist, cmdcount, etc. 
-        O => $self->getOut(),
         P => $self->getRequest()->getContents(),
         Q => $self->getRequest(),
         R => $self->getResponse(), 
@@ -670,7 +668,7 @@ sub dispatchCommand # ( %args)
     my $coderef = $self->can($fname);
     if (!$coderef)
     {
-	    return $self->handleUnknownCommand(%cmdBundle);
+        return $self->doHandlerMappedCommand(%cmdBundle);
     } 
 
     my $rv = -1;
@@ -720,12 +718,20 @@ sub _transformCommand # ($cmd)
 	# copy it into $rv letter-by-letter; with a _ or - being skipped but causing next letter to be caps.
 	my $rv = '';
 	my $lim = length($cmd);
+    my $ord_A = ord('A');
+    my $ord_Z = ord('Z');
+
 	for (my $i=0; $i<$lim; $i++)
 	{
 		my $ch = substr($cmd, $i, 1);
+        my $och = ord($ch);
+
 		if ($ch eq '-' || $ch eq '_')
 		{
 			$capstate=1;
+        } elsif ( ($och >= $ord_A)  && ($och<=$ord_Z) ) {
+            $rv .= $ch;
+            $capstate = 0;
 		} else {
 			if ($capstate > 0)
 			{
@@ -751,6 +757,42 @@ sub _transformCommand # ($cmd)
 	$rv = '' if ($rv eq 'DefaultCommand');
 	$rv = '' if ($rv eq 'UnknownCommand');
 	return ($rv);
+}
+
+sub doHandlerMappedCommand  # (%command-bundle-args)
+# Baldrick 0.86+.  Called when a command is not found via $self->can(), 
+# this will inspect _commandHandlers and attempt to transmogrify into
+# a class that can handle this command.  If nothing found, fall back on
+# handleUnknownCommand
+{
+    my ($self, %args) = @_;
+
+    my $map = $self->{_commandHandlers} || 0 ;
+    my $cmd = $args{cmd};
+    my $fn = $args{functionName} || ('handle' . $self->_transformCommand($cmd));
+    my $oldclass = ref($self);  # for error message only
+
+    if ($cmd && $map && ref($map))
+    {
+        foreach my $regex (keys %$map)
+        {
+            next if (!$regex);  # empty is bad
+            if ($cmd =~ m/$regex/)
+            {
+                my $classname = $map->{$regex} || next;
+                $self->transmogrifySelf($classname);
+                if ($self->can($fn))
+                {
+                    return $self->$fn(%args);
+                } else {
+                    $self->setError(sprintf(
+                        "For command %s, after transmogrifying %s to %s, I still can't %s",
+                        $cmd, $oldclass, $classname, $fn));
+                } 
+            } 
+        } 
+    }
+    return $self->handleUnknownCommand(%args);
 }
 
 sub handleUnknownCommand # ( func => handleXXX, cmd => XXX, ...)
